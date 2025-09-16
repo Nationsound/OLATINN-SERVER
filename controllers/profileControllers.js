@@ -16,7 +16,7 @@ const createOrUpdateProfile = async (req, res) => {
       await profile.save();
     } else {
       // create new
-      profile = await UserProfile.create({ user: userId, fullName, address, age });
+      profile = await UserProfile.create({ user: userId, fullName, address, age }); 
     }
 
     res.json({ message: "Profile saved successfully", profile });
