@@ -19,6 +19,8 @@ const bookingRoutes = require('./routes/bookingRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const chatRoutes = require("./routes/chatRoutes");
 const blogRoutes = require('./routes/blogRoutes');
+const designRoutes = require('./routes/designRoutes');
+const designCommentRoutes = require('./routes/designCommentRoutes');
 
 // Middleware
 app.use(morgan("dev"));
@@ -36,6 +38,8 @@ app.use('/olatinn/api/bookings', bookingRoutes);
 app.use('/olatinn/api/admin', adminRoutes);
 app.use("/olatinn/api/chat", chatRoutes);
 app.use('/olatinn/api/blogs', blogRoutes);
+app.use('/olatinn/api/designs', designRoutes);
+app.use('/olatinn/api/designComments', designCommentRoutes);
 
 // Sample route
 app.get("/", (req, res) => {
