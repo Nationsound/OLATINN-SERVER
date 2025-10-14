@@ -43,8 +43,14 @@ const getDesigns = async (req, res) => {
 // Get latest design
 const getLatestDesign = async (req, res) => {
   try {
-    const design = await Design.findOne().sort({ createdAt: -1 });
-    res.json(design);
+    // ✅ Sort by createdAt (for new posts) and _id (for old posts)
+    const design = await Design.findOne().sort({ createdAt: -1, _id: -1 });
+
+    if (!design) {
+      return res.status(404).json({ message: "No design posts found" });
+    }
+
+    res.status(200).json(design);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
