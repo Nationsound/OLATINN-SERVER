@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/olatinn/api/:path*",
+      "destination": "http://olatinn-api.us-east-1.elasticbeanstalk.com/olatinn/api/:path*"
+    }
+  ]
+}
