@@ -32,7 +32,7 @@ const invoiceRoutes = require("./routes/invoiceRoutes");
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://olatinnlimited.com', 'http://olatinn-api.us-east-1.elasticbeanstalk.com/', 'https://www.olatinnlimited.com'],
+  origin: ['http://localhost:3000', 'https://olatinnlimited.com', 'https://olatinn-server.onrender.com', 'https://www.olatinnlimited.com'],
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
 }));
@@ -41,7 +41,7 @@ app.use(cors({
 const allowedOrigins = [
   "http://localhost:3000",
   "https://olatinnlimited.com",
-  "http://olatinn-api.us-east-1.elasticbeanstalk.com/",
+  "https://olatinn-server.onrender.com",
   "https://www.olatinnlimited.com"
 ];
 
