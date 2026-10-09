@@ -7,7 +7,6 @@ const storeSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "A store owner is required"],
-      unique: true,
       index: true,
     },
 
