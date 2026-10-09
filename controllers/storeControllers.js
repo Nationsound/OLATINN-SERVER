@@ -62,6 +62,7 @@ const handleDatabaseError = (res, error) => {
 
 
 // POST /olatinn/api/store-front
+
 const createStore = async (req, res) => {
   try {
     const ownerId = getAuthenticatedUserId(req);
@@ -82,8 +83,10 @@ const createStore = async (req, res) => {
       logoUrl,
       primaryColor,
       secondaryColor,
+      theme,
     } = req.body;
 
+    // Validate required fields
     if (
       typeof businessName !== "string" ||
       !businessName.trim() ||
@@ -98,6 +101,19 @@ const createStore = async (req, res) => {
       });
     }
 
+    // Validate the selected theme
+    const allowedThemes = ["modern", "minimal", "boutique"];
+
+    const selectedTheme = theme || "modern";
+
+    if (!allowedThemes.includes(selectedTheme)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select a valid store theme.",
+      });
+    }
+
+    // Check whether this user already owns a store
     const existingStore = await Store.findOne({ owner: ownerId });
 
     if (existingStore) {
@@ -108,6 +124,7 @@ const createStore = async (req, res) => {
       });
     }
 
+    // Generate and validate the store URL slug
     const storeSlug = slugify(slug || storeName);
 
     if (!storeSlug) {
@@ -117,16 +134,19 @@ const createStore = async (req, res) => {
       });
     }
 
+    // Create the store
     const store = await Store.create({
       owner: ownerId,
       businessName: businessName.trim(),
       storeName: storeName.trim(),
       slug: storeSlug,
       category: category.trim(),
-      description,
-      logoUrl,
-      primaryColor,
-      secondaryColor,
+      description:
+        typeof description === "string" ? description.trim() : "",
+      logoUrl: typeof logoUrl === "string" ? logoUrl.trim() : "",
+      primaryColor: primaryColor || "#000271",
+      secondaryColor: secondaryColor || "#17acdd",
+      theme: selectedTheme,
     });
 
     return res.status(201).json({

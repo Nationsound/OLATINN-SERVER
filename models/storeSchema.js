@@ -69,6 +69,12 @@ const storeSchema = new mongoose.Schema(
       match: [/^#[0-9a-fA-F]{6}$/, "Enter a valid hex color"],
     },
 
+    theme: {
+  type: String,
+  enum: ["modern", "minimal", "boutique"],
+  default: "modern",
+},
+
     status: {
       type: String,
       enum: ["draft", "published"],
