@@ -206,12 +206,12 @@ const uploadStoreLogo = async (req, res) => {
 // GET /olatinn/api/store-front/my-store
 const getMyStore = async (req, res) => {
   try {
-    const ownerId = getAuthenticatedUserId(req);
+    const ownerId = req.user?._id || req.user?.userId || req.user?.id;
 
     if (!ownerId) {
       return res.status(401).json({
         success: false,
-        message: "Please sign in to access your store.",
+        message: "Authentication required.",
       });
     }
 
@@ -220,7 +220,7 @@ const getMyStore = async (req, res) => {
     if (!store) {
       return res.status(404).json({
         success: false,
-        message: "You haven't created a store yet.",
+        message: "No store found.",
       });
     }
 
@@ -229,11 +229,17 @@ const getMyStore = async (req, res) => {
       store,
     });
   } catch (error) {
-    return handleDatabaseError(res, error);
+    console.error("Get store error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to retrieve your store.",
+    });
   }
 };
 
 // PATCH /olatinn/api/store-front/my-store
+
 const updateMyStore = async (req, res) => {
   try {
     const ownerId = getAuthenticatedUserId(req);
@@ -245,6 +251,7 @@ const updateMyStore = async (req, res) => {
       });
     }
 
+    // Fields the merchant is allowed to update
     const allowedFields = [
       "businessName",
       "storeName",
@@ -254,6 +261,7 @@ const updateMyStore = async (req, res) => {
       "logoUrl",
       "primaryColor",
       "secondaryColor",
+      "theme",
     ];
 
     const updates = {};
@@ -264,6 +272,7 @@ const updateMyStore = async (req, res) => {
       }
     }
 
+    // Validate business name
     if (
       updates.businessName !== undefined &&
       (typeof updates.businessName !== "string" ||
@@ -275,6 +284,7 @@ const updateMyStore = async (req, res) => {
       });
     }
 
+    // Validate store name
     if (
       updates.storeName !== undefined &&
       (typeof updates.storeName !== "string" ||
@@ -286,6 +296,7 @@ const updateMyStore = async (req, res) => {
       });
     }
 
+    // Validate category
     if (
       updates.category !== undefined &&
       (typeof updates.category !== "string" ||
@@ -297,7 +308,82 @@ const updateMyStore = async (req, res) => {
       });
     }
 
+    // Validate description
+    if (
+      updates.description !== undefined &&
+      typeof updates.description !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Description must be valid text.",
+      });
+    }
+
+    // Validate logo URL
+    if (
+      updates.logoUrl !== undefined &&
+      typeof updates.logoUrl !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Logo URL must be valid text.",
+      });
+    }
+
+    // Validate primary color
+    if (updates.primaryColor !== undefined) {
+      if (
+        typeof updates.primaryColor !== "string" ||
+        !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(
+          updates.primaryColor
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid primary color.",
+        });
+      }
+    }
+
+    // Validate secondary color
+    if (updates.secondaryColor !== undefined) {
+      if (
+        typeof updates.secondaryColor !== "string" ||
+        !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(
+          updates.secondaryColor
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid secondary color.",
+        });
+      }
+    }
+
+    // Validate selected theme
+    if (updates.theme !== undefined) {
+      const allowedThemes = ["modern", "minimal", "boutique"];
+
+      if (!allowedThemes.includes(updates.theme)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please select a valid store theme.",
+        });
+      }
+    }
+
+    // Validate and generate store slug
     if (updates.slug !== undefined) {
+      if (
+        typeof updates.slug !== "string" ||
+        !updates.slug.trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid store URL.",
+        });
+      }
+
       updates.slug = slugify(updates.slug);
 
       if (!updates.slug) {
@@ -308,12 +394,20 @@ const updateMyStore = async (req, res) => {
       }
     }
 
-    for (const field of ["businessName", "storeName", "category"]) {
+    // Trim text fields
+    for (const field of [
+      "businessName",
+      "storeName",
+      "category",
+      "description",
+      "logoUrl",
+    ]) {
       if (typeof updates[field] === "string") {
         updates[field] = updates[field].trim();
       }
     }
 
+    // Find the authenticated user's store
     const store = await Store.findOne({ owner: ownerId });
 
     if (!store) {
@@ -323,6 +417,22 @@ const updateMyStore = async (req, res) => {
       });
     }
 
+    // Prevent another store from using the same slug
+    if (updates.slug !== undefined) {
+      const existingStore = await Store.findOne({
+        slug: updates.slug,
+        _id: { $ne: store._id },
+      });
+
+      if (existingStore) {
+        return res.status(409).json({
+          success: false,
+          message: "This store URL is already in use. Please choose another.",
+        });
+      }
+    }
+
+    // Apply permitted updates
     for (const [field, value] of Object.entries(updates)) {
       store[field] = value;
     }
@@ -335,10 +445,10 @@ const updateMyStore = async (req, res) => {
       store,
     });
   } catch (error) {
+    console.error("Update store error:", error);
     return handleDatabaseError(res, error);
   }
 };
-
 // GET /olatinn/api/store-front/public/:slug
 const getPublicStore = async (req, res) => {
   try {
