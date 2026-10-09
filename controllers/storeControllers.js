@@ -149,16 +149,17 @@ const uploadStoreLogo = async (req, res) => {
       });
     }
 
-    const userId = req.user?.userId;
+    // Get the authenticated user's MongoDB ID.
+    const userId = req.user?._id || req.user?.userId || req.user?.id;
 
-    if (!userId) {
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
       return res.status(401).json({
         success: false,
-        message: "Authentication required.",
+        message: "Authentication required. Please sign in again.",
       });
     }
 
-    // Upload the selected image to Cloudinary
+    // Upload the selected image to Cloudinary.
     const uploadResponse = await cloudinary.uploader.upload(
       req.file.path,
       {
@@ -167,18 +168,11 @@ const uploadStoreLogo = async (req, res) => {
       }
     );
 
-    // Save the image URL to the authenticated user's store, if one exists
-    const store = await Store.findOneAndUpdate(
-      { owner: userId },
-      { $set: { logoUrl: uploadResponse.secure_url } },
-      { new: true, runValidators: true }
-    );
-
+    // Return the URL so the frontend can include it when creating the store.
     return res.status(200).json({
       success: true,
       message: "Store logo uploaded successfully.",
       logoUrl: uploadResponse.secure_url,
-      store,
     });
   } catch (error) {
     console.error("Store logo upload error:", error);
@@ -189,8 +183,6 @@ const uploadStoreLogo = async (req, res) => {
     });
   }
 };
-
-
 // GET /olatinn/api/store-front/my-store
 const getMyStore = async (req, res) => {
   try {
