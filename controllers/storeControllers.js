@@ -5,7 +5,7 @@ const Store = require("../models/storeSchema");
 
 
 const getAuthenticatedUserId = (req) => {
-  const userId = req.user?.userId;
+  const userId = req.user?._id || req.user?.userId || req.user?.id;
 
   if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
     return null;
