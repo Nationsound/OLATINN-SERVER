@@ -1,5 +1,5 @@
 const Design = require("../models/designSchema");
-const cloudinary = require("../config/cloudinary");
+const cloudinary = require("../config/cloudinary"); 
 
 // Create new design
 const createDesign = async (req, res) => {
@@ -26,7 +26,7 @@ const createDesign = async (req, res) => {
     await newDesign.save();
     res.status(201).json(newDesign);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ message: error.message }); 
   }
 };
 

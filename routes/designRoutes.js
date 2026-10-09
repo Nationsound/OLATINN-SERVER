@@ -10,7 +10,7 @@ router.post("/", upload.single("image"), designControllers.createDesign);       
 router.get("/", designControllers.getDesigns);
 router.get("/latest", designControllers.getLatestDesign);
 router.get("/:id", designControllers.getDesignById);
-router.put("/:id", upload.single("image"), designControllers.updateDesign);       // Admin only
+router.put("/:id", upload.single("image"), designControllers.updateDesign);        // Admin only
 router.delete("/:id", designControllers.deleteDesign);    // Admin only
 router.patch("/like/:id", protect, designControllers.toggleLike);
 

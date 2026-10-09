@@ -28,6 +28,7 @@ const designRoutes = require("./routes/designRoutes");
 const designCommentRoutes = require("./routes/designCommentRoutes");
 const contactAndReviewRoutes = require("./routes/contactAndReviewRoutes");
 const invoiceRoutes = require("./routes/invoiceRoutes");
+const storeRoutes = require("./routes/storeRoutes");
 
 
 // Middleware
@@ -53,7 +54,7 @@ connectDB();
 
 // Routes
 app.use("/olatinn/api/auth", authRoutes);
-app.use("/olatinn/api/profile", profileRoutes);
+app.use("/olatinn/api/profile", profileRoutes); 
 app.use("/olatinn/api/subscribers", subscriberRoutes);
 app.use("/olatinn/api/partners", partnerRoutes);
 app.use("/olatinn/api/bookings", bookingRoutes);
@@ -64,7 +65,7 @@ app.use("/olatinn/api/designs", designRoutes);
 app.use("/olatinn/api/designComments", designCommentRoutes);
 app.use("/olatinn/api/contact-reviews", contactAndReviewRoutes);
 app.use("/olatinn/api/invoices", invoiceRoutes);
-
+app.use("/olatinn/api/stores", storeRoutes);
 // Sample root route
 app.get("/", (req, res) => {
   res.send("OLATINN Backend is running 🚀");

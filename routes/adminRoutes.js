@@ -13,6 +13,6 @@ router.put("/:id", protectAdmin, adminControllers.updateAdmin);
 router.delete("/:id", protectAdmin, adminControllers.deleteAdmin);
 
 // ✅ Forgotten password (public)
-router.post("/forgot-password", adminControllers.forgotPassword);
+router.post("/forgot-password", adminControllers.forgotPassword); 
 
 module.exports = router;
