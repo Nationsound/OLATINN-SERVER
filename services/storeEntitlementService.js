@@ -20,7 +20,7 @@ const getMerchantEntitlements = async (ownerId) => {
   })
     .sort({ createdAt: -1 })
     .populate("plan");
-
+ 
   const validSubscription = subscriptions.find((subscription) => {
     if (!subscription.plan || !subscription.plan.isActive) {
       return false;

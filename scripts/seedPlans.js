@@ -1,7 +1,7 @@
 
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
-const Plan = require("../models/Plan");
+const Plan = require("../models/planSchema");
 
 dotenv.config();
 
