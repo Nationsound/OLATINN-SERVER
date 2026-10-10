@@ -1,67 +1,58 @@
 const express = require("express");
-
 const productControllers = require("../controllers/productControllers");
 const { protect } = require("../middleware/authMiddleware");
+const upload = require("../middleware/multer");
 
 const router = express.Router();
 
-// ========================================
 // Public product listing
-// ========================================
-
 router.get(
-  "/public/store/:slug",
-  productControllers.getPublicStoreProducts
+    "/public/store/:slug",
+    productControllers.getPublicStoreProducts
 );
 
-// ========================================
 // Protected merchant product routes
-// ========================================
-
-// Create a product for a specific store
 router.post(
-  "/store/:storeId",
-  protect,
-  productControllers.createProduct
+    "/store/:storeId",
+    protect,
+    upload.single("image"),
+    productControllers.createProduct
 );
 
-// List products belonging to a specific store
 router.get(
-  "/store/:storeId",
-  protect,
-  productControllers.getStoreProducts
-);
-
-// Publish or unpublish a product
-router.patch(
-  "/:productId/publish",
-  protect,
-  productControllers.publishProduct
-);
+    "/store/:storeId",
+    protect,
+    productControllers.getStoreProducts
+); 
 
 router.patch(
-  "/:productId/unpublish",
-  protect,
-  productControllers.unpublishProduct
+    "/:productId/publish",
+    protect,
+    productControllers.publishProduct
 );
 
-// Get, edit, or delete an individual product
+router.patch(
+    "/:productId/unpublish",
+    protect,
+    productControllers.unpublishProduct
+);
+
 router.get(
-  "/:productId",
-  protect,
-  productControllers.getProductById
+    "/:productId",
+    protect,
+    productControllers.getProductById
 );
 
 router.patch(
-  "/:productId",
-  protect,
-  productControllers.updateProduct
+    "/:productId",
+    protect,
+    productControllers.updateProduct
 );
 
 router.delete(
-  "/:productId",
-  protect,
-  productControllers.deleteProduct
+    "/:productId",
+    protect,
+    productControllers.deleteProduct
 );
 
 module.exports = router;

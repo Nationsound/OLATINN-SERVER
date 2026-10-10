@@ -1,5 +1,7 @@
 const mongoose = require("mongoose");
 
+const cloudinary = require("../config/cloudinary");
+
 const Store = require("../models/storeSchema");
 const Product = require("../models/productSchema");
 
@@ -54,7 +56,7 @@ const handleDatabaseError = (res, error) => {
       ),
     });
   }
-
+ 
   console.error("Product controller error:", error);
 
   return res.status(500).json({
@@ -121,193 +123,275 @@ const createUniqueProductSlug = async (
 // ========================================
 
 const createProduct = async (req, res) => {
-  try {
-    const ownerId = getAuthenticatedUserId(req);
+    let uploadedImagePublicId = null;
 
-    if (!ownerId) {
-      return res.status(401).json({
-        success: false,
-        message: "Authentication is required.",
-      });
-    }
+    try {
+        const ownerId = getAuthenticatedUserId(req);
 
-    const { storeId } = req.params;
+        if (!ownerId) {
+            return res.status(401).json({
+                success: false,
+                message: "Authentication is required.",
+            });
+        }
 
-    const {
-      name,
-      description,
-      category,
-      brand,
-      sku,
-      price,
-      compareAtPrice,
-      stockQuantity,
-      trackInventory,
-      images,
-      isFeatured,
-      seo,
-    } = req.body;
+        // Multer parses multipart/form-data.
+        // This fallback also prevents destructuring undefined.
+        const body = req.body || {};
 
-    if (!name || !String(name).trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Product name is required.",
-      });
-    }
+        const { storeId } = req.params;
 
-    if (
-      price === undefined ||
-      price === null ||
-      price === "" ||
-      !Number.isFinite(Number(price)) ||
-      Number(price) < 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Enter a valid product price.",
-      });
-    }
+        const {
+            name,
+            description,
+            category,
+            brand,
+            sku,
+            price,
+            compareAtPrice,
+            stockQuantity,
+            trackInventory,
+            isFeatured,
+            imageAlt,
+        } = body;
 
-    const store = await findOwnedStore(storeId, ownerId);
+        // Validate product name.
+        if (
+            typeof name !== "string" ||
+            !name.trim()
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Product name is required.",
+            });
+        }
 
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Store not found, or you do not have permission to manage it.",
-      });
-    }
+        // Validate price.
+        if (
+            price === undefined ||
+            price === null ||
+            price === "" ||
+            !Number.isFinite(Number(price)) ||
+            Number(price) < 0
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Enter a valid product price.",
+            });
+        }
 
-    const entitlementData =
-      await getMerchantEntitlements(ownerId);
+        // Validate comparison price when provided.
+        if (
+            compareAtPrice !== undefined &&
+            compareAtPrice !== null &&
+            compareAtPrice !== "" &&
+            (
+                !Number.isFinite(Number(compareAtPrice)) ||
+                Number(compareAtPrice) < 0
+            )
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Enter a valid comparison price.",
+            });
+        }
 
-    const entitlements =
-      entitlementData?.entitlements || {};
+        // Validate stock quantity.
+        if (
+            stockQuantity !== undefined &&
+            (
+                !Number.isInteger(Number(stockQuantity)) ||
+                Number(stockQuantity) < 0
+            )
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Stock quantity must be a non-negative whole number.",
+            });
+        }
 
-    const productLimit = Number(
-      entitlements.maxProductsPerStore
-    );
+        // Validate uploaded image.
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: "Please select a product image to upload.",
+            });
+        }
 
-    if (
-      !Number.isInteger(productLimit) ||
-      productLimit < -1
-    ) {
-      return res.status(500).json({
-        success: false,
-        message:
-          "The product limit is missing or incorrectly configured for your plan.",
-      });
-    }
+        // Confirm that the merchant owns this store.
+        const store = await findOwnedStore(storeId, ownerId);
 
-    if (productLimit !== -1) {
-      const currentProductCount = await Product.countDocuments({
-        store: store._id,
-        owner: ownerId,
-      });
+        if (!store) {
+            return res.status(404).json({
+                success: false,
+                message:
+                    "Store not found, or you do not have permission to manage it.",
+            });
+        }
 
-      if (currentProductCount >= productLimit) {
-        return res.status(403).json({
-          success: false,
-          code: "PRODUCT_LIMIT_REACHED",
-          message:
-            "You have reached the product limit for your current plan.",
-          productLimit,
-          currentProductCount,
-          plan: entitlementData.plan?.name,
+        // Retrieve the merchant's plan and product limit.
+        const entitlementData =
+            await getMerchantEntitlements(ownerId);
+
+        const entitlements =
+            entitlementData?.entitlements || {};
+
+        const productLimit = Number(
+            entitlements.maxProductsPerStore
+        );
+
+        if (
+            !Number.isInteger(productLimit) ||
+            productLimit < -1
+        ) {
+            return res.status(500).json({
+                success: false,
+                message:
+                    "The product limit is missing or incorrectly configured for your plan.",
+            });
+        }
+
+        // A limit of -1 means unlimited products.
+        if (productLimit !== -1) {
+            const currentProductCount =
+                await Product.countDocuments({
+                    store: store._id,
+                    owner: ownerId,
+                });
+
+            if (currentProductCount >= productLimit) {
+                return res.status(403).json({
+                    success: false,
+                    code: "PRODUCT_LIMIT_REACHED",
+                    message:
+                        "You have reached the product limit for your current plan.",
+                    productLimit,
+                    currentProductCount,
+                    plan: entitlementData.plan?.name,
+                });
+            }
+        }
+
+        // Generate a unique product URL.
+        const productSlug = await createUniqueProductSlug(
+            store._id,
+            name
+        );
+
+        // Upload the image to Cloudinary.
+        const uploadResponse = await cloudinary.uploader.upload(
+            req.file.path,
+            {
+                folder: "olatinn-products",
+                resource_type: "image",
+            }
+        );
+
+        uploadedImagePublicId = uploadResponse.public_id;
+
+        // Convert multipart form values to actual booleans.
+        const parsedTrackInventory =
+            trackInventory === undefined
+                ? true
+                : String(trackInventory) === "true";
+
+        const parsedIsFeatured =
+            isFeatured === undefined
+                ? false
+                : String(isFeatured) === "true";
+
+        // Save product and Cloudinary image URL in MongoDB.
+        const product = await Product.create({
+            store: store._id,
+            owner: ownerId,
+
+            name: name.trim(),
+            slug: productSlug,
+
+            description:
+                typeof description === "string"
+                    ? description.trim()
+                    : "",
+
+            category:
+                typeof category === "string"
+                    ? category.trim()
+                    : "",
+
+            brand:
+                typeof brand === "string"
+                    ? brand.trim()
+                    : "",
+
+            sku:
+                typeof sku === "string"
+                    ? sku.trim()
+                    : "",
+
+            price: Number(price),
+
+            compareAtPrice:
+                compareAtPrice === undefined ||
+                compareAtPrice === null ||
+                compareAtPrice === ""
+                    ? null
+                    : Number(compareAtPrice),
+
+            stockQuantity:
+                stockQuantity === undefined ||
+                stockQuantity === ""
+                    ? 0
+                    : Number(stockQuantity),
+
+            trackInventory: parsedTrackInventory,
+
+            images: [
+                {
+                    url: uploadResponse.secure_url,
+                    alt:
+                        typeof imageAlt === "string" &&
+                        imageAlt.trim()
+                            ? imageAlt.trim()
+                            : name.trim(),
+                },
+            ],
+
+            isFeatured: parsedIsFeatured,
+
+            status: "draft",
+            publishedAt: null,
         });
-      }
+
+        return res.status(201).json({
+            success: true,
+            message:
+                "Product created successfully as a draft.",
+            product,
+        });
+    } catch (error) {
+        console.error("Create product error:", error);
+
+        // If MongoDB creation fails after the image upload,
+        // remove the uploaded image to avoid an orphaned asset.
+        if (uploadedImagePublicId) {
+            try {
+                await cloudinary.uploader.destroy(
+                    uploadedImagePublicId,
+                    {
+                        resource_type: "image",
+                    }
+                );
+            } catch (cleanupError) {
+                console.error(
+                    "Cloudinary cleanup failed:",
+                    cleanupError
+                );
+            }
+        }
+
+        return handleDatabaseError(res, error);
     }
-
-    if (
-      compareAtPrice !== undefined &&
-      compareAtPrice !== null &&
-      compareAtPrice !== "" &&
-      (
-        !Number.isFinite(Number(compareAtPrice)) ||
-        Number(compareAtPrice) < 0
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Enter a valid comparison price.",
-      });
-    }
-
-    if (
-      stockQuantity !== undefined &&
-      (
-        !Number.isInteger(Number(stockQuantity)) ||
-        Number(stockQuantity) < 0
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Stock quantity must be a non-negative whole number.",
-      });
-    }
-
-    if (
-      images !== undefined &&
-      (
-        !Array.isArray(images) ||
-        images.length > 10
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Provide an image array containing no more than 10 images.",
-      });
-    }
-
-    const productSlug = await createUniqueProductSlug(
-      store._id,
-      name
-    );
-
-    const product = await Product.create({
-      store: store._id,
-      owner: ownerId,
-      name: String(name).trim(),
-      slug: productSlug,
-      description,
-      category,
-      brand,
-      sku,
-      price: Number(price),
-      compareAtPrice:
-        compareAtPrice === undefined ||
-        compareAtPrice === null ||
-        compareAtPrice === ""
-          ? null
-          : Number(compareAtPrice),
-      stockQuantity:
-        stockQuantity === undefined
-          ? 0
-          : Number(stockQuantity),
-      trackInventory:
-        trackInventory === undefined
-          ? true
-          : trackInventory,
-      images: images || [],
-      isFeatured:
-        isFeatured === undefined
-          ? false
-          : isFeatured,
-      seo: seo || {},
-      status: "draft",
-      publishedAt: null,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Product created successfully as a draft.",
-      product,
-    });
-  } catch (error) {
-    return handleDatabaseError(res, error);
-  }
 };
 
 // ========================================
