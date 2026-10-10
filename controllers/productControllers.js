@@ -895,6 +895,118 @@ const getPublicStoreProducts = async (req, res) => {
   }
 };
 
+// ============================================
+// PUBLIC MARKETPLACE: ALL PUBLISHED PRODUCTS
+// ============================================
+
+const getPublicMarketplaceProducts = async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(
+      48,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 12)
+    );
+
+    const search =
+      typeof req.query.search === "string"
+        ? req.query.search.trim()
+        : "";
+
+    const category =
+      typeof req.query.category === "string"
+        ? req.query.category.trim()
+        : "";
+
+    // Only include stores that have been published.
+    const eligibleStores = await Store.find({
+      status: "published",
+    }).select("_id");
+
+    const storeIds = eligibleStores.map((store) => store._id);
+
+    if (storeIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        products: [],
+        categories: [],
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          totalPages: 0,
+        },
+      });
+    }
+
+    // Never expose drafts or products belonging to unpublished stores.
+    const filter = {
+      status: "published",
+      store: { $in: storeIds },
+    };
+
+    if (category) {
+      filter.category = category;
+    }
+
+    if (search) {
+      const escapedSearch = search.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+
+      const searchRegex = new RegExp(escapedSearch, "i");
+
+      filter.$or = [
+        { name: searchRegex },
+        { description: searchRegex },
+        { category: searchRegex },
+        { brand: searchRegex },
+      ];
+    }
+
+    const [products, total, categoryProducts] = await Promise.all([
+      Product.find(filter)
+        .populate(
+          "store",
+          "storeName businessName slug logoUrl primaryColor"
+        )
+        .sort({ publishedAt: -1, createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+
+      Product.countDocuments(filter),
+
+      Product.find({
+        status: "published",
+        store: { $in: storeIds },
+        category: { $exists: true, $nin: ["", null] },
+      }).distinct("category"),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      products,
+      categories: categoryProducts.sort((a, b) =>
+        a.localeCompare(b)
+      ),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Public marketplace error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load marketplace products.",
+    });
+  }
+};
+
 module.exports = {
   createProduct,
   getStoreProducts,
@@ -904,4 +1016,5 @@ module.exports = {
   unpublishProduct,
   deleteProduct,
   getPublicStoreProducts,
+  getPublicMarketplaceProducts,
 };

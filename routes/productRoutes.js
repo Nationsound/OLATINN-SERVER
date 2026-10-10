@@ -22,7 +22,7 @@ router.post(
 router.get(
     "/store/:storeId",
     protect,
-    productControllers.getStoreProducts
+    productControllers.getStoreProducts 
 ); 
 
 router.patch(
@@ -53,6 +53,12 @@ router.delete(
     "/:productId",
     protect,
     productControllers.deleteProduct
+);
+
+// Public marketplace routes
+router.get(
+    "/public/marketplace",
+    productControllers.getPublicMarketplaceProducts
 );
 
 module.exports = router;
