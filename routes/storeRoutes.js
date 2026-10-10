@@ -35,7 +35,7 @@ router.patch(
 // Manage a specific store by its MongoDB ID
 router.patch(
   "/:storeId",
-  protect,
+  protect, 
   storeControllers.updateStoreById
 );
 
