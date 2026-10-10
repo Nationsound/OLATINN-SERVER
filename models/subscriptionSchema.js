@@ -91,7 +91,7 @@ const subscriptionSchema = new mongoose.Schema(
     priceAtPurchase: {
       type: Number,
       min: 0,
-      default: null,
+      default: null, 
     },
 
     currencyAtPurchase: {

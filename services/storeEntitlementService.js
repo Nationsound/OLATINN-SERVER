@@ -1,6 +1,6 @@
 
-const Plan = require("../models/Plan");
-const Subscription = require("../models/Subscription");
+const Plan = require("../models/planSchema");
+const Subscription = require("../models/subscriptionSchema");
 
 const getMerchantEntitlements = async (ownerId) => {
   const now = new Date();

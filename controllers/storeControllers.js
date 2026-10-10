@@ -2,6 +2,9 @@
 const mongoose = require("mongoose");
 const cloudinary = require("../config/cloudinary");
 const Store = require("../models/storeSchema");
+const {
+  getMerchantEntitlements,
+} = require("../services/storeEntitlementService");
 
 
 const getAuthenticatedUserId = (req) => {
@@ -64,99 +67,229 @@ const handleDatabaseError = (res, error) => {
 // POST /olatinn/api/store-front
 
 const createStore = async (req, res) => {
-  try {
-    const ownerId = getAuthenticatedUserId(req);
+    try {
+        const ownerId = getAuthenticatedUserId(req);
 
-    if (!ownerId) {
-      return res.status(401).json({
-        success: false,
-        message: "Your session could not be verified. Please sign in again.",
-      });
+        if (!ownerId) {
+            return res.status(401).json({
+                success: false,
+                message:
+                    "Your session could not be verified. Please sign in again.",
+            });
+        }
+
+        const {
+            businessName,
+            storeName,
+            slug,
+            category,
+            description,
+            logoUrl,
+            primaryColor,
+            secondaryColor,
+            theme,
+        } = req.body;
+
+        // Validate required fields.
+        if (
+            typeof businessName !== "string" ||
+            !businessName.trim() ||
+            typeof storeName !== "string" ||
+            !storeName.trim() ||
+            typeof category !== "string" ||
+            !category.trim()
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Business name, store name, and category are required.",
+            });
+        }
+
+        // Validate optional text fields.
+        if (
+            description !== undefined &&
+            typeof description !== "string"
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Description must be text.",
+            });
+        }
+
+        if (
+            logoUrl !== undefined &&
+            typeof logoUrl !== "string"
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Logo URL must be text.",
+            });
+        }
+
+        // Validate the requested theme.
+        const validThemes = ["modern", "minimal", "boutique"];
+        const selectedTheme = theme || "modern";
+
+        if (
+            typeof selectedTheme !== "string" ||
+            !validThemes.includes(selectedTheme)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Please select a valid store theme.",
+            });
+        }
+
+        // Validate colors.
+        const selectedPrimaryColor = primaryColor || "#000271";
+        const selectedSecondaryColor = secondaryColor || "#17acdd";
+
+        const validHexColor = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+        if (
+            typeof selectedPrimaryColor !== "string" ||
+            !validHexColor.test(selectedPrimaryColor) ||
+            typeof selectedSecondaryColor !== "string" ||
+            !validHexColor.test(selectedSecondaryColor)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Primary and secondary colors must be valid hexadecimal colors.",
+            });
+        }
+
+        // Get the merchant's effective plan and entitlements.
+        const account = await getMerchantEntitlements(ownerId);
+
+        const plan = account?.plan;
+        const entitlements = account?.entitlements;
+
+        if (
+            !plan ||
+            !entitlements ||
+            !Array.isArray(entitlements.themes) ||
+            typeof entitlements.maxStores !== "number"
+        ) {
+            console.error(
+                "Invalid merchant entitlement response:",
+                account
+            );
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    "We could not verify your store plan. Please try again later.",
+            });
+        }
+
+        // Enforce theme entitlement.
+        if (!entitlements.themes.includes(selectedTheme)) {
+            return res.status(403).json({
+                success: false,
+                code: "THEME_NOT_INCLUDED_IN_PLAN",
+                message:
+                    `The ${selectedTheme} theme is not included in your ` +
+                    `${plan.name} plan. Please upgrade to access this theme.`,
+                currentPlan: plan.key,
+                allowedThemes: entitlements.themes,
+            });
+        }
+
+        // Count the merchant's existing stores.
+        const storeCount = await Store.countDocuments({
+            owner: ownerId,
+        });
+
+        // A maxStores value of -1 means unlimited.
+        if (
+            entitlements.maxStores !== -1 &&
+            storeCount >= entitlements.maxStores
+        ) {
+            return res.status(403).json({
+                success: false,
+                code: "STORE_LIMIT_REACHED",
+                message:
+                    `Your ${plan.name} plan allows ` +
+                    `${entitlements.maxStores} store(s). ` +
+                    "Upgrade your plan to create more stores.",
+                currentPlan: plan.key,
+                storeLimit: entitlements.maxStores,
+                currentStoreCount: storeCount,
+            });
+        }
+
+        // Generate and validate the store URL slug.
+        const storeSlug = slugify(slug || storeName);
+
+        if (!storeSlug) {
+            return res.status(400).json({
+                success: false,
+                message: "Please provide a valid store name or URL.",
+            });
+        }
+
+        // Check whether another store already uses this URL.
+        const existingSlug = await Store.findOne({
+            slug: storeSlug,
+        }).select("_id");
+
+        if (existingSlug) {
+            return res.status(409).json({
+                success: false,
+                code: "STORE_SLUG_ALREADY_EXISTS",
+                message:
+                    "This store URL is already in use. Please choose another.",
+            });
+        }
+
+        // Create the store.
+        const store = await Store.create({
+            owner: ownerId,
+            businessName: businessName.trim(),
+            storeName: storeName.trim(),
+            slug: storeSlug,
+            category: category.trim(),
+            description:
+                typeof description === "string"
+                    ? description.trim()
+                    : "",
+            logoUrl:
+                typeof logoUrl === "string"
+                    ? logoUrl.trim()
+                    : "",
+            primaryColor: selectedPrimaryColor,
+            secondaryColor: selectedSecondaryColor,
+            theme: selectedTheme,
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: "Your store has been created successfully.",
+            store,
+            plan: {
+                key: plan.key,
+                name: plan.name,
+                maxStores: entitlements.maxStores,
+                currentStoreCount: storeCount + 1,
+            },
+        });
+    } catch (error) {
+        // MongoDB duplicate-key error, such as a slug collision
+        // caused by two requests arriving at nearly the same time.
+        if (error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                code: "STORE_SLUG_ALREADY_EXISTS",
+                message:
+                    "This store URL is already in use. Please choose another.",
+            });
+        }
+
+        console.error("Create store error:", error);
+        return handleDatabaseError(res, error);
     }
-
-    const {
-      businessName,
-      storeName,
-      slug,
-      category,
-      description,
-      logoUrl,
-      primaryColor,
-      secondaryColor,
-      theme,
-    } = req.body;
-
-    // Validate required fields
-    if (
-      typeof businessName !== "string" ||
-      !businessName.trim() ||
-      typeof storeName !== "string" ||
-      !storeName.trim() ||
-      typeof category !== "string" ||
-      !category.trim()
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Business name, store name, and category are required.",
-      });
-    }
-
-    // Validate the selected theme
-    const allowedThemes = ["modern", "minimal", "boutique"];
-
-    const selectedTheme = theme || "modern";
-
-    if (!allowedThemes.includes(selectedTheme)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please select a valid store theme.",
-      });
-    }
-
-    // Check whether this user already owns a store
-    const existingStore = await Store.findOne({ owner: ownerId });
-
-    if (existingStore) {
-      return res.status(409).json({
-        success: false,
-        message: "You already have a store.",
-        store: existingStore,
-      });
-    }
-
-    // Generate and validate the store URL slug
-    const storeSlug = slugify(slug || storeName);
-
-    if (!storeSlug) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide a valid store name or URL.",
-      });
-    }
-
-    // Create the store
-    const store = await Store.create({
-      owner: ownerId,
-      businessName: businessName.trim(),
-      storeName: storeName.trim(),
-      slug: storeSlug,
-      category: category.trim(),
-      description:
-        typeof description === "string" ? description.trim() : "",
-      logoUrl: typeof logoUrl === "string" ? logoUrl.trim() : "",
-      primaryColor: primaryColor || "#000271",
-      secondaryColor: secondaryColor || "#17acdd",
-      theme: selectedTheme,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Your store has been created successfully.",
-      store,
-    });
-  } catch (error) {
-    return handleDatabaseError(res, error);
-  }
 };
 
 // Upload merchant store logo
@@ -203,6 +336,8 @@ const uploadStoreLogo = async (req, res) => {
     });
   }
 };
+
+
 // GET /olatinn/api/store-front/my-store
 const getMyStore = async (req, res) => {
   try {
@@ -236,6 +371,83 @@ const getMyStore = async (req, res) => {
       message: "Unable to retrieve your store.",
     });
   }
+};
+
+
+// GET /olatinn/api/store-front
+const getMyStores = async (req, res) => {
+    try {
+        const ownerId = getAuthenticatedUserId(req);
+
+        if (!ownerId) {
+            return res.status(401).json({
+                success: false,
+                message: "Your session could not be verified. Please sign in again.",
+            });
+        }
+
+        const stores = await Store.find({ owner: ownerId })
+            .sort({ createdAt: -1 });
+
+        const account = await getMerchantEntitlements(ownerId);
+
+        return res.status(200).json({
+            success: true,
+            count: stores.length,
+            stores,
+            plan: account.plan,
+            subscription: account.subscription,
+            accessStatus: account.accessStatus,
+            entitlements: account.entitlements,
+        });
+    } catch (error) {
+        console.error("Get my stores error:", error);
+        return handleDatabaseError(res, error);
+    }
+};
+
+
+
+// GET /olatinn/api/store-front/:storeId
+const getStoreById = async (req, res) => {
+    try {
+        const ownerId = getAuthenticatedUserId(req);
+        const { storeId } = req.params;
+
+        if (!ownerId) {
+            return res.status(401).json({
+                success: false,
+                message: "Please sign in to continue.",
+            });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(storeId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid store ID.",
+            });
+        }
+
+        const store = await Store.findOne({
+            _id: storeId,
+            owner: ownerId,
+        });
+
+        if (!store) {
+            return res.status(404).json({
+                success: false,
+                message: "Store not found or you do not have permission to access it.",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            store,
+        });
+    } catch (error) {
+        console.error("Get store by ID error:", error);
+        return handleDatabaseError(res, error);
+    }
 };
 
 // PATCH /olatinn/api/store-front/my-store
@@ -372,6 +584,24 @@ const updateMyStore = async (req, res) => {
       }
     }
 
+    // Enforce the merchant's theme entitlement
+if (updates.theme !== undefined) {
+  const { plan, entitlements } =
+    await getMerchantEntitlements(ownerId);
+
+  if (!entitlements.themes.includes(updates.theme)) {
+    return res.status(403).json({
+      success: false,
+      code: "THEME_NOT_INCLUDED_IN_PLAN",
+      message:
+        `The ${updates.theme} theme is not included in your ` +
+        `${plan.name} plan. Please upgrade to access this theme.`,
+      currentPlan: plan.key,
+      allowedThemes: entitlements.themes,
+    });
+  }
+}
+
     // Validate and generate store slug
     if (updates.slug !== undefined) {
       if (
@@ -449,31 +679,232 @@ const updateMyStore = async (req, res) => {
     return handleDatabaseError(res, error);
   }
 };
+
+
+// PATCH /olatinn/api/store-front/:storeId
+const updateStoreById = async (req, res) => {
+    try {
+        const ownerId = getAuthenticatedUserId(req);
+        const { storeId } = req.params;
+
+        if (!ownerId) {
+            return res.status(401).json({
+                success: false,
+                message: "Please sign in to update your store.",
+            });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(storeId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid store ID.",
+            });
+        }
+
+        const store = await Store.findOne({
+            _id: storeId,
+            owner: ownerId,
+        });
+
+        if (!store) {
+            return res.status(404).json({
+                success: false,
+                message: "Store not found or you do not have permission to edit it.",
+            });
+        }
+
+        const allowedFields = [
+            "businessName",
+            "storeName",
+            "slug",
+            "category",
+            "description",
+            "logoUrl",
+            "primaryColor",
+            "secondaryColor",
+            "theme",
+        ];
+
+        const updates = {};
+
+        for (const field of allowedFields) {
+            if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+                updates[field] = req.body[field];
+            }
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Please provide at least one field to update.",
+            });
+        }
+
+        const requiredFields = [
+            "businessName",
+            "storeName",
+            "category",
+        ];
+
+        for (const field of requiredFields) {
+            if (
+                Object.prototype.hasOwnProperty.call(updates, field) &&
+                (
+                    typeof updates[field] !== "string" ||
+                    !updates[field].trim()
+                )
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: `${field} cannot be empty.`,
+                });
+            }
+        }
+
+        for (const field of ["description", "logoUrl"]) {
+            if (
+                Object.prototype.hasOwnProperty.call(updates, field) &&
+                typeof updates[field] !== "string"
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: `${field} must be text.`,
+                });
+            }
+        }
+
+        for (const field of ["primaryColor", "secondaryColor"]) {
+            if (Object.prototype.hasOwnProperty.call(updates, field)) {
+                if (
+                    typeof updates[field] !== "string" ||
+                    !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(
+                        updates[field]
+                    )
+                ) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `${field} must be a valid hexadecimal color.`,
+                    });
+                }
+            }
+        }
+
+        if (
+            Object.prototype.hasOwnProperty.call(updates, "theme")
+        ) {
+            const account = await getMerchantEntitlements(ownerId);
+            const allowedThemes = account.entitlements?.themes || [];
+
+            if (!allowedThemes.includes(updates.theme)) {
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "Your current plan does not include this store theme.",
+                    allowedThemes,
+                });
+            }
+        }
+
+        if (Object.prototype.hasOwnProperty.call(updates, "slug")) {
+            if (
+                typeof updates.slug !== "string" ||
+                !updates.slug.trim()
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Please provide a valid store URL.",
+                });
+            }
+
+            updates.slug = slugify(updates.slug);
+
+            if (!updates.slug) {
+                return res.status(400).json({
+                    success: false,
+                    message: "The store URL is invalid.",
+                });
+            }
+
+            const duplicateSlug = await Store.findOne({
+                slug: updates.slug,
+                _id: { $ne: store._id },
+            });
+
+            if (duplicateSlug) {
+                return res.status(409).json({
+                    success: false,
+                    message: "This store URL is already in use.",
+                });
+            }
+        }
+
+        for (const field of [
+            "businessName",
+            "storeName",
+            "category",
+            "description",
+            "logoUrl",
+        ]) {
+            if (
+                Object.prototype.hasOwnProperty.call(updates, field)
+            ) {
+                updates[field] = updates[field].trim();
+            }
+        }
+
+        Object.assign(store, updates);
+
+        await store.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Your store has been updated successfully.",
+            store,
+        });
+    } catch (error) {
+        console.error("Update store by ID error:", error);
+        return handleDatabaseError(res, error);
+    }
+};
+
+
 // GET /olatinn/api/store-front/public/:slug
 const getPublicStore = async (req, res) => {
-  try {
-    const store = await Store.findOne({
-      slug: String(req.params.slug).toLowerCase(),
-      status: "published",
-    }).select(
-      "businessName storeName slug category description logoUrl primaryColor secondaryColor status publishedAt"
-    );
+    try {
+        const { slug } = req.params;
 
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: "This published store could not be found.",
-      });
+        if (typeof slug !== "string" || !slug.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: "A valid store URL is required.",
+            });
+        }
+
+        const store = await Store.findOne({
+            slug: slugify(slug),
+            status: "published",
+        }).select(
+            "businessName storeName slug category description logoUrl primaryColor secondaryColor theme status publishedAt createdAt"
+        );
+
+        if (!store) {
+            return res.status(404).json({
+                success: false,
+                message: "This store does not exist or is not currently published.",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            store,
+        });
+    } catch (error) {
+        console.error("Public store lookup error:", error);
+        return handleDatabaseError(res, error);
     }
-
-    return res.status(200).json({
-      success: true,
-      store,
-    });
-  } catch (error) {
-    return handleDatabaseError(res, error);
-  }
 };
+
+
 
 // PATCH /olatinn/api/store-front/my-store/publish
 const publishStore = async (req, res) => {
@@ -524,11 +955,180 @@ const publishStore = async (req, res) => {
   }
 };
 
+
+
+// PATCH /olatinn/api/store-front/:storeId/publish
+const publishStoreById = async (req, res) => {
+    try {
+        const ownerId = getAuthenticatedUserId(req);
+        const { storeId } = req.params;
+
+        if (!ownerId) {
+            return res.status(401).json({
+                success: false,
+                message: "Please sign in to publish your store.",
+            });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(storeId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid store ID.",
+            });
+        }
+
+        const store = await Store.findOne({
+            _id: storeId,
+            owner: ownerId,
+        });
+
+        if (!store) {
+            return res.status(404).json({
+                success: false,
+                message: "Store not found.",
+            });
+        }
+
+        if (
+            !store.businessName?.trim() ||
+            !store.storeName?.trim() ||
+            !store.slug?.trim() ||
+            !store.category?.trim()
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Complete the required store details before publishing.",
+            });
+        }
+
+        store.status = "published";
+        store.publishedAt = store.publishedAt || new Date();
+
+        await store.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Your store is now published.",
+            store,
+            publicUrl: `/store/${store.slug}`,
+        });
+    } catch (error) {
+        console.error("Publish store by ID error:", error);
+        return handleDatabaseError(res, error);
+    }
+};
+
+
+
+// PATCH /olatinn/api/store-front/:storeId/unpublish
+const unpublishStoreById = async (req, res) => {
+    try {
+        const ownerId = getAuthenticatedUserId(req);
+        const { storeId } = req.params;
+
+        if (!ownerId) {
+            return res.status(401).json({
+                success: false,
+                message: "Please sign in to continue.",
+            });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(storeId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid store ID.",
+            });
+        }
+
+        const store = await Store.findOne({
+            _id: storeId,
+            owner: ownerId,
+        });
+
+        if (!store) {
+            return res.status(404).json({
+                success: false,
+                message: "Store not found.",
+            });
+        }
+
+        store.status = "draft";
+
+        await store.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Your store has been unpublished.",
+            store,
+        });
+    } catch (error) {
+        console.error("Unpublish store error:", error);
+        return handleDatabaseError(res, error);
+    }
+};
+
+
+
+// DELETE /olatinn/api/store-front/:storeId
+const deleteStore = async (req, res) => {
+    try {
+        const ownerId = getAuthenticatedUserId(req);
+        const { storeId } = req.params;
+
+        if (!ownerId) {
+            return res.status(401).json({
+                success: false,
+                message: "Please sign in to delete your store.",
+            });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(storeId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid store ID.",
+            });
+        }
+
+        const store = await Store.findOne({
+            _id: storeId,
+            owner: ownerId,
+        });
+
+        if (!store) {
+            return res.status(404).json({
+                success: false,
+                message: "Store not found or you do not have permission to delete it.",
+            });
+        }
+
+        await Store.deleteOne({
+            _id: store._id,
+            owner: ownerId,
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Your store has been deleted successfully.",
+            deletedStoreId: storeId,
+        });
+    } catch (error) {
+        console.error("Delete store error:", error);
+        return handleDatabaseError(res, error);
+    }
+};
+
 module.exports = {
   createStore,
   uploadStoreLogo,
   getMyStore,
+  getMyStores,
+  updateMyStore,
   updateMyStore,
   getPublicStore,
   publishStore,
+  publishStoreById,
+  unpublishStoreById,
+  getStoreById,
+  updateStoreById,
+  deleteStore,
 };
