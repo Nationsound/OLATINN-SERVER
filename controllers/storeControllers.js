@@ -723,6 +723,7 @@ const updateStoreById = async (req, res) => {
             "primaryColor",
             "secondaryColor",
             "theme",
+            "whatsappNumber",
         ];
 
         const updates = {};
@@ -837,6 +838,32 @@ const updateStoreById = async (req, res) => {
                 });
             }
         }
+
+        
+            if (req.body.whatsappNumber !== undefined) {
+    if (typeof req.body.whatsappNumber !== "string") {
+        return res.status(400).json({
+            success: false,
+            message: "WhatsApp number must be a string.",
+        });
+    }
+
+    const whatsappNumber = req.body.whatsappNumber.trim();
+
+    if (
+        whatsappNumber !== "" &&
+        !/^\+?[1-9]\d{7,14}$/.test(whatsappNumber)
+    ) {
+        return res.status(400).json({
+            success: false,
+            message:
+                "Enter a valid international WhatsApp number, including the country code.",
+        });
+    }
+
+    store.whatsappNumber = whatsappNumber;
+}
+        
 
         for (const field of [
             "businessName",
@@ -1117,6 +1144,305 @@ const deleteStore = async (req, res) => {
     }
 };
 
+
+/* =========================================
+   MERCHANT PAYMENT SETTINGS
+========================================= */
+
+// GET /olatinn/api/stores/:storeId/payment-settings
+const getPaymentSettings = async (req, res) => {
+  try {
+    const ownerId = getAuthenticatedUserId(req);
+    const { storeId } = req.params;
+
+    if (!ownerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Please sign in to continue.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(storeId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid store ID.",
+      });
+    }
+
+    const store = await Store.findOne({
+      _id: storeId,
+      owner: ownerId,
+    }).select(
+      "+paymentSettings.accountNumber " +
+      "+paymentSettings.branchCode " +
+      "+paymentSettings.routingDetails"
+    );
+
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        message: "Store not found or you do not have permission to access it.",
+      });
+    }
+
+    const settings = store.paymentSettings || {};
+
+    return res.status(200).json({
+      success: true,
+      paymentSettings: {
+        accountHolderName: settings.accountHolderName || "",
+        bankName: settings.bankName || "",
+        accountNumber: settings.accountNumber || "",
+        accountType: settings.accountType || "",
+        branchCode: settings.branchCode || "",
+        routingDetails: settings.routingDetails || "",
+        paymentCurrency: settings.paymentCurrency || store.currency || "USD",
+        customerInstructions: settings.customerInstructions || "",
+        bankTransferEnabled: Boolean(settings.bankTransferEnabled),
+        updatedAt: settings.updatedAt || null,
+      },
+    });
+  } catch (error) {
+    console.error("Get payment settings error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to retrieve payment settings.",
+    });
+  }
+};
+
+
+// PATCH /olatinn/api/stores/:storeId/payment-settings
+const updatePaymentSettings = async (req, res) => {
+  try {
+    const ownerId = getAuthenticatedUserId(req);
+    const { storeId } = req.params;
+
+    if (!ownerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Please sign in to continue.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(storeId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid store ID.",
+      });
+    }
+
+    const allowedFields = [
+      "accountHolderName",
+      "bankName",
+      "accountNumber",
+      "accountType",
+      "branchCode",
+      "routingDetails",
+      "paymentCurrency",
+      "customerInstructions",
+      "bankTransferEnabled",
+    ];
+
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      Array.isArray(req.body)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide valid payment settings.",
+      });
+    }
+
+    const suppliedFields = Object.keys(req.body);
+
+    if (
+      suppliedFields.length === 0 ||
+      suppliedFields.some((field) => !allowedFields.includes(field))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide valid payment-setting fields.",
+      });
+    }
+
+    const store = await Store.findOne({
+      _id: storeId,
+      owner: ownerId,
+    }).select(
+      "+paymentSettings.accountNumber " +
+      "+paymentSettings.branchCode " +
+      "+paymentSettings.routingDetails"
+    );
+
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        message: "Store not found or you do not have permission to edit it.",
+      });
+    }
+
+    const textFields = [
+      "accountHolderName",
+      "bankName",
+      "accountNumber",
+      "accountType",
+      "branchCode",
+      "routingDetails",
+      "paymentCurrency",
+      "customerInstructions",
+    ];
+
+    for (const field of textFields) {
+      if (
+        Object.prototype.hasOwnProperty.call(req.body, field) &&
+        typeof req.body[field] !== "string"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `${field} must be text.`,
+        });
+      }
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        req.body,
+        "bankTransferEnabled"
+      ) &&
+      typeof req.body.bankTransferEnabled !== "boolean"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Bank transfer enabled must be true or false.",
+      });
+    }
+
+    const validCurrencies = ["USD", "NGN", "ZAR", "GBP", "EUR"];
+    const validAccountTypes = [
+      "",
+      "savings",
+      "current",
+      "business",
+      "other",
+    ];
+
+    if (req.body.paymentCurrency !== undefined) {
+      req.body.paymentCurrency = req.body.paymentCurrency.trim().toUpperCase();
+
+      if (!validCurrencies.includes(req.body.paymentCurrency)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please select a supported payment currency.",
+        });
+      }
+    }
+
+    if (
+      req.body.accountType !== undefined &&
+      !validAccountTypes.includes(req.body.accountType.trim().toLowerCase())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select a valid account type.",
+      });
+    }
+
+    const lengthLimits = {
+      accountHolderName: 120,
+      bankName: 100,
+      accountNumber: 50,
+      accountType: 20,
+      branchCode: 30,
+      routingDetails: 100,
+      customerInstructions: 1500,
+    };
+
+    for (const [field, maxLength] of Object.entries(lengthLimits)) {
+      if (
+        req.body[field] !== undefined &&
+        req.body[field].trim().length > maxLength
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `${field} cannot exceed ${maxLength} characters.`,
+        });
+      }
+    }
+
+    const settings = store.paymentSettings;
+
+    for (const field of textFields) {
+      if (req.body[field] !== undefined) {
+        let value = req.body[field].trim();
+
+        if (field === "accountType") {
+          value = value.toLowerCase();
+        }
+
+        settings[field] = value;
+      }
+    }
+
+    if (req.body.bankTransferEnabled !== undefined) {
+      settings.bankTransferEnabled = req.body.bankTransferEnabled;
+    }
+
+    // Do not enable bank transfer without the essential bank details.
+    if (settings.bankTransferEnabled) {
+      if (
+        !settings.accountHolderName?.trim() ||
+        !settings.bankName?.trim() ||
+        !settings.accountNumber?.trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Enter the account holder name, bank name, and account number before enabling bank transfers.",
+        });
+      }
+    }
+
+    settings.updatedAt = new Date();
+
+    await store.save();
+
+    // Never return the complete Store document from this endpoint.
+    return res.status(200).json({
+      success: true,
+      message: "Payment settings saved successfully.",
+      paymentSettings: {
+        accountHolderName: settings.accountHolderName || "",
+        bankName: settings.bankName || "",
+        accountNumber: settings.accountNumber || "",
+        accountType: settings.accountType || "",
+        branchCode: settings.branchCode || "",
+        routingDetails: settings.routingDetails || "",
+        paymentCurrency: settings.paymentCurrency || store.currency || "USD",
+        customerInstructions: settings.customerInstructions || "",
+        bankTransferEnabled: Boolean(settings.bankTransferEnabled),
+        updatedAt: settings.updatedAt || null,
+      },
+    });
+  } catch (error) {
+    console.error("Update payment settings error:", error);
+
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to save payment settings.",
+    });
+  }
+};
+
 module.exports = {
   createStore,
   uploadStoreLogo,
@@ -1131,4 +1457,6 @@ module.exports = {
   getStoreById,
   updateStoreById,
   deleteStore,
+  getPaymentSettings,
+  updatePaymentSettings,
 };

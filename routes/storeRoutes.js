@@ -32,6 +32,20 @@ router.patch(
   storeControllers.publishStore
 );
 
+
+// Merchant payment and bank settings
+router.get(
+  "/:storeId/payment-settings",
+  protect,
+  storeControllers.getPaymentSettings
+);
+
+router.patch(
+  "/:storeId/payment-settings",
+  protect,
+  storeControllers.updatePaymentSettings
+);
+
 // Manage a specific store by its MongoDB ID
 router.patch(
   "/:storeId",

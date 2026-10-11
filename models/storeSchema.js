@@ -105,6 +105,84 @@ const storeSchema = new mongoose.Schema(
       default: "USD",
     },
 
+    whatsappNumber: {
+    type: String,
+    trim: true,
+    default: "",
+    maxlength: 20,
+},
+
+    // Merchant payment and bank-transfer settings
+    paymentSettings: {
+      accountHolderName: {
+        type: String,
+        trim: true,
+        maxlength: 120,
+        default: "",
+      },
+
+      bankName: {
+        type: String,
+        trim: true,
+        maxlength: 100,
+        default: "",
+      },
+
+      accountNumber: {
+        type: String,
+        trim: true,
+        maxlength: 50,
+        default: "",
+        select: false,
+      },
+
+      accountType: {
+        type: String,
+        enum: ["", "savings", "current", "business", "other"],
+        default: "",
+      },
+
+      branchCode: {
+        type: String,
+        trim: true,
+        maxlength: 30,
+        default: "",
+        select: false,
+      },
+
+      routingDetails: {
+        type: String,
+        trim: true,
+        maxlength: 100,
+        default: "",
+        select: false,
+      },
+
+      paymentCurrency: {
+        type: String,
+        uppercase: true,
+        enum: ["USD", "NGN", "ZAR", "GBP", "EUR"],
+        default: "USD",
+      },
+
+      customerInstructions: {
+        type: String,
+        trim: true,
+        maxlength: 1500,
+        default: "",
+      },
+
+      bankTransferEnabled: {
+        type: Boolean,
+        default: false,
+      },
+
+      updatedAt: {
+        type: Date,
+        default: null,
+      },
+    },
+
     socialLinks: {
       instagram: { type: String, default: "" },
       facebook: { type: String, default: "" },
@@ -120,6 +198,7 @@ const storeSchema = new mongoose.Schema(
         maxlength: 70,
         default: "",
       },
+
       description: {
         type: String,
         trim: true,
