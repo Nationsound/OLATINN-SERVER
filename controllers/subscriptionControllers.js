@@ -9,7 +9,7 @@ const fs = require("fs/promises");
 const {
   getCurrentSubscription,
   hasPendingManualPayment,
-} = require("../services/subscriptionService");
+} = require("../services/subscriptionServices");
 
 const removeTemporaryFile = async (filePath) => {
   if (filePath) {
@@ -92,6 +92,31 @@ const getMySubscription = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Unable to retrieve your subscription.",
+    });
+  }
+};
+
+const getBankDetails = async (req, res) => {
+  try {
+    const ownerId = getUserId(req);
+
+    if (!ownerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      bankDetails: getConfiguredBankDetails(),
+    });
+  } catch (error) {
+    console.error("Get bank details error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to retrieve bank details.",
     });
   }
 };
@@ -563,6 +588,8 @@ const streamPaymentReceipt = async (req, res) => {
   }
 };
 
+const getPaymentReceipt = streamPaymentReceipt;
+
 const approvePayment = async (req, res) => {
   try {
     const adminId = getAdminId(req);
@@ -716,11 +743,13 @@ const rejectPayment = async (req, res) => {
 
 module.exports = {
   getMySubscription,
+  getBankDetails,
   activateFreePlan,
   submitManualPayment,
   cancelSubscription,
   getPendingPayments,
   streamPaymentReceipt,
+  getPaymentReceipt,
   approvePayment,
   rejectPayment,
   getConfiguredBankDetails,

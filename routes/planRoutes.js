@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 
-const planControllers = require("../controllers/planController");
+const planControllers = require("../controllers/planControllers");
 
 router.get("/", planControllers.getPlans);
 

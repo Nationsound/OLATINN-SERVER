@@ -30,6 +30,8 @@ const contactAndReviewRoutes = require("./routes/contactAndReviewRoutes");
 const invoiceRoutes = require("./routes/invoiceRoutes");
 const storeRoutes = require("./routes/storeRoutes");
 const productRoutes = require("./routes/productRoutes");
+const planRoutes = require("./routes/planRoutes");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
 
 
 // Middleware
@@ -68,6 +70,8 @@ app.use("/olatinn/api/contact-reviews", contactAndReviewRoutes);
 app.use("/olatinn/api/invoices", invoiceRoutes);
 app.use("/olatinn/api/stores", storeRoutes);
 app.use("/olatinn/api/products", productRoutes);
+app.use("/olatinn/api/plans", planRoutes);
+app.use("/olatinn/api/subscriptions", subscriptionRoutes);
 
 
 

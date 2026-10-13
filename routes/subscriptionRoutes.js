@@ -3,13 +3,16 @@ const express = require("express");
 const router = express.Router();
 
 const subscriptionControllers = require(
-  "../controllers/subscriptionController"
+  "../controllers/subscriptionControllers"
 );
 
 const {
   protect,
   protectAdmin,
 } = require("../middleware/authMiddleware");
+
+const upload = require("../middleware/multer");
+
 
 // Merchant routes
 router.get(
@@ -33,7 +36,7 @@ router.post(
 router.post(
   "/receipt",
   protect,
-  subscriptionControllers.uploadPaymentReceipt,
+  upload.single("receipt"),
   subscriptionControllers.submitManualPayment
 );
 
@@ -53,7 +56,7 @@ router.get(
 router.get(
   "/admin/:id/receipt",
   protectAdmin,
-  subscriptionControllers.getPaymentReceipt
+  subscriptionControllers.streamPaymentReceipt
 );
 
 router.patch(
