@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose");
 
 const subscriptionSchema = new mongoose.Schema(
@@ -35,6 +34,7 @@ const subscriptionSchema = new mongoose.Schema(
       type: String,
       enum: ["monthly", "yearly"],
       default: "monthly",
+      required: true,
     },
 
     trialStart: {
@@ -74,7 +74,7 @@ const subscriptionSchema = new mongoose.Schema(
 
     paymentProvider: {
       type: String,
-      enum: ["none", "paystack", "stripe"],
+      enum: ["none", "paystack", "stripe", "manual"],
       default: "none",
     },
 
@@ -91,12 +91,63 @@ const subscriptionSchema = new mongoose.Schema(
     priceAtPurchase: {
       type: Number,
       min: 0,
-      default: null, 
+      default: null,
     },
 
     currencyAtPurchase: {
       type: String,
       uppercase: true,
+      default: null,
+    },
+
+    // Private receipt path. Do not expose this as a public static file.
+    paymentReceiptPath: {
+      type: String,
+      default: null,
+    },
+
+    paymentReference: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    paymentSubmittedAt: {
+      type: Date,
+      default: null,
+    },
+
+    paymentReceiptUrl: {
+  type: String,
+  default: null,
+},
+
+paymentReceiptPublicId: {
+  type: String,
+  default: null,
+},
+
+paymentReceiptResourceType: {
+  type: String,
+  enum: ["image", "raw", "video"],
+  default: null,
+},
+
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+      default: null,
+    },
+
+    reviewedAt: {
+      type: Date,
+      default: null,
+    },
+
+    rejectionReason: {
+      type: String,
+      trim: true,
+      maxlength: 1000,
       default: null,
     },
   },
@@ -105,11 +156,27 @@ const subscriptionSchema = new mongoose.Schema(
   }
 );
 
-// Efficiently retrieve a merchant's latest subscription.
 subscriptionSchema.index({
   owner: 1,
   createdAt: -1,
 });
+
+subscriptionSchema.index({
+  status: 1,
+  paymentSubmittedAt: -1,
+});
+
+// Only one active or trialing subscription per user.
+subscriptionSchema.index(
+  { owner: 1 },
+  {
+    unique: true,
+    name: "one_active_subscription_per_owner",
+    partialFilterExpression: {
+      status: { $in: ["active", "trialing"] },
+    },
+  }
+);
 
 module.exports = mongoose.model(
   "Subscription",
