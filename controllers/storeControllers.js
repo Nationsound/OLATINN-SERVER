@@ -88,6 +88,9 @@ const createStore = async (req, res) => {
             primaryColor,
             secondaryColor,
             theme,
+            contactEmail,
+            contactPhone,
+            whatsappNumber,
         } = req.body;
 
         // Validate required fields.
@@ -127,6 +130,54 @@ const createStore = async (req, res) => {
             });
         }
 
+        if (
+            contactEmail !== undefined &&
+            typeof contactEmail !== "string"
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Contact email must be text.",
+            });
+        }
+
+        if (
+            contactPhone !== undefined &&
+            typeof contactPhone !== "string"
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Contact phone must be text.",
+            });
+        }
+
+        // Validate the WhatsApp number.
+        let normalizedWhatsAppNumber = "";
+
+        if (whatsappNumber !== undefined && whatsappNumber !== null) {
+            if (typeof whatsappNumber !== "string") {
+                return res.status(400).json({
+                    success: false,
+                    message: "WhatsApp number must be text.",
+                });
+            }
+
+            normalizedWhatsAppNumber = whatsappNumber.trim();
+
+            // Allow an empty number, but validate any supplied number.
+            if (
+                normalizedWhatsAppNumber &&
+                !/^\+?[1-9]\d{7,14}$/.test(
+                    normalizedWhatsAppNumber
+                )
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "Please provide a valid WhatsApp number with its country code.",
+                });
+            }
+        }
+
         // Validate the requested theme.
         const validThemes = ["modern", "minimal", "boutique"];
         const selectedTheme = theme || "modern";
@@ -144,7 +195,6 @@ const createStore = async (req, res) => {
         // Validate colors.
         const selectedPrimaryColor = primaryColor || "#000271";
         const selectedSecondaryColor = secondaryColor || "#17acdd";
-
         const validHexColor = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
         if (
@@ -162,7 +212,6 @@ const createStore = async (req, res) => {
 
         // Get the merchant's effective plan and entitlements.
         const account = await getMerchantEntitlements(ownerId);
-
         const plan = account?.plan;
         const entitlements = account?.entitlements;
 
@@ -226,7 +275,8 @@ const createStore = async (req, res) => {
         if (!storeSlug) {
             return res.status(400).json({
                 success: false,
-                message: "Please provide a valid store name or URL.",
+                message:
+                    "Please provide a valid store name or URL.",
             });
         }
 
@@ -259,6 +309,15 @@ const createStore = async (req, res) => {
                 typeof logoUrl === "string"
                     ? logoUrl.trim()
                     : "",
+            contactEmail:
+                typeof contactEmail === "string"
+                    ? contactEmail.trim()
+                    : "",
+            contactPhone:
+                typeof contactPhone === "string"
+                    ? contactPhone.trim()
+                    : "",
+            whatsappNumber: normalizedWhatsAppNumber,
             primaryColor: selectedPrimaryColor,
             secondaryColor: selectedSecondaryColor,
             theme: selectedTheme,
@@ -276,8 +335,7 @@ const createStore = async (req, res) => {
             },
         });
     } catch (error) {
-        // MongoDB duplicate-key error, such as a slug collision
-        // caused by two requests arriving at nearly the same time.
+        // MongoDB duplicate-key error, such as a slug collision.
         if (error.code === 11000) {
             return res.status(409).json({
                 success: false,
@@ -288,6 +346,7 @@ const createStore = async (req, res) => {
         }
 
         console.error("Create store error:", error);
+
         return handleDatabaseError(res, error);
     }
 };
@@ -451,237 +510,300 @@ const getStoreById = async (req, res) => {
 };
 
 // PATCH /olatinn/api/store-front/my-store
+// ============================================================
+// UPDATE MY STORE
+// PATCH /olatinn/api/stores/my-store
+// ============================================================
 
 const updateMyStore = async (req, res) => {
-  try {
-    const ownerId = getAuthenticatedUserId(req);
+    try {
+        const ownerId = getAuthenticatedUserId(req);
 
-    if (!ownerId) {
-      return res.status(401).json({
-        success: false,
-        message: "Please sign in to update your store.",
-      });
-    }
+        if (!ownerId) {
+            return res.status(401).json({
+                success: false,
+                message: "Please sign in to update your store.",
+            });
+        }
 
-    // Fields the merchant is allowed to update
-    const allowedFields = [
-      "businessName",
-      "storeName",
-      "slug",
-      "category",
-      "description",
-      "logoUrl",
-      "primaryColor",
-      "secondaryColor",
-      "theme",
-    ];
+        // Fields the merchant is allowed to update
+        const allowedFields = [
+            "businessName",
+            "storeName",
+            "slug",
+            "category",
+            "description",
+            "logoUrl",
+            "primaryColor",
+            "secondaryColor",
+            "theme",
+            "contactEmail",
+            "contactPhone",
+            "whatsappNumber",
+        ];
 
-    const updates = {};
+        const updates = {};
 
-    for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        updates[field] = req.body[field];
-      }
-    }
+        for (const field of allowedFields) {
+            if (req.body[field] !== undefined) {
+                updates[field] = req.body[field];
+            }
+        }
 
-    // Validate business name
-    if (
-      updates.businessName !== undefined &&
-      (typeof updates.businessName !== "string" ||
-        !updates.businessName.trim())
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Business name cannot be empty.",
-      });
-    }
+        // Validate business name
+        if (
+            updates.businessName !== undefined &&
+            (
+                typeof updates.businessName !== "string" ||
+                !updates.businessName.trim()
+            )
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Business name cannot be empty.",
+            });
+        }
 
-    // Validate store name
-    if (
-      updates.storeName !== undefined &&
-      (typeof updates.storeName !== "string" ||
-        !updates.storeName.trim())
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Store name cannot be empty.",
-      });
-    }
+        // Validate store name
+        if (
+            updates.storeName !== undefined &&
+            (
+                typeof updates.storeName !== "string" ||
+                !updates.storeName.trim()
+            )
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Store name cannot be empty.",
+            });
+        }
 
-    // Validate category
-    if (
-      updates.category !== undefined &&
-      (typeof updates.category !== "string" ||
-        !updates.category.trim())
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Category cannot be empty.",
-      });
-    }
+        // Validate category
+        if (
+            updates.category !== undefined &&
+            (
+                typeof updates.category !== "string" ||
+                !updates.category.trim()
+            )
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Category cannot be empty.",
+            });
+        }
 
-    // Validate description
-    if (
-      updates.description !== undefined &&
-      typeof updates.description !== "string"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Description must be valid text.",
-      });
-    }
+        // Validate description
+        if (
+            updates.description !== undefined &&
+            typeof updates.description !== "string"
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Description must be valid text.",
+            });
+        }
 
-    // Validate logo URL
-    if (
-      updates.logoUrl !== undefined &&
-      typeof updates.logoUrl !== "string"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Logo URL must be valid text.",
-      });
-    }
+        // Validate logo URL
+        if (
+            updates.logoUrl !== undefined &&
+            typeof updates.logoUrl !== "string"
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Logo URL must be valid text.",
+            });
+        }
 
-    // Validate primary color
-    if (updates.primaryColor !== undefined) {
-      if (
-        typeof updates.primaryColor !== "string" ||
-        !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(
-          updates.primaryColor
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Please provide a valid primary color.",
+        for (const field of ["contactEmail", "contactPhone"]) {
+            if (
+                updates[field] !== undefined &&
+                typeof updates[field] !== "string"
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: `${field} must be text.`,
+                });
+            }
+        }
+
+        // Validate WhatsApp number
+        if (updates.whatsappNumber !== undefined) {
+            if (typeof updates.whatsappNumber !== "string") {
+                return res.status(400).json({
+                    success: false,
+                    message: "WhatsApp number must be a string.",
+                });
+            }
+
+            updates.whatsappNumber = updates.whatsappNumber.trim();
+
+            if (
+                updates.whatsappNumber !== "" &&
+                !/^\+?[1-9]\d{7,14}$/.test(
+                    updates.whatsappNumber
+                )
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "Enter a valid international WhatsApp number, including the country code.",
+                });
+            }
+        }
+
+        // Validate primary color
+        if (updates.primaryColor !== undefined) {
+            if (
+                typeof updates.primaryColor !== "string" ||
+                !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(
+                    updates.primaryColor
+                )
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Please provide a valid primary color.",
+                });
+            }
+        }
+
+        // Validate secondary color
+        if (updates.secondaryColor !== undefined) {
+            if (
+                typeof updates.secondaryColor !== "string" ||
+                !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(
+                    updates.secondaryColor
+                )
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Please provide a valid secondary color.",
+                });
+            }
+        }
+
+        // Validate selected theme
+        if (updates.theme !== undefined) {
+            const allowedThemes = [
+                "modern",
+                "minimal",
+                "boutique",
+            ];
+
+            if (!allowedThemes.includes(updates.theme)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Please select a valid store theme.",
+                });
+            }
+        }
+
+        // Enforce the merchant's theme entitlement
+        if (updates.theme !== undefined) {
+            const { plan, entitlements } =
+                await getMerchantEntitlements(ownerId);
+
+            if (!entitlements.themes.includes(updates.theme)) {
+                return res.status(403).json({
+                    success: false,
+                    code: "THEME_NOT_INCLUDED_IN_PLAN",
+                    message:
+                        `The ${updates.theme} theme is not included in your ` +
+                        `${plan.name} plan. Please upgrade to access this theme.`,
+                    currentPlan: plan.key,
+                    allowedThemes: entitlements.themes,
+                });
+            }
+        }
+
+        // Validate and generate store slug
+        if (updates.slug !== undefined) {
+            if (
+                typeof updates.slug !== "string" ||
+                !updates.slug.trim()
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Please provide a valid store URL.",
+                });
+            }
+
+            updates.slug = slugify(updates.slug);
+
+            if (!updates.slug) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Please provide a valid store URL.",
+                });
+            }
+        }
+
+        // Trim text fields
+        for (const field of [
+            "businessName",
+            "storeName",
+            "category",
+            "description",
+            "logoUrl",
+            "contactEmail",
+            "contactPhone",
+        ]) {
+            if (typeof updates[field] === "string") {
+                updates[field] = updates[field].trim();
+            }
+        }
+
+        // Find the authenticated user's store
+        const store = await Store.findOne({
+            owner: ownerId,
         });
-      }
-    }
 
-    // Validate secondary color
-    if (updates.secondaryColor !== undefined) {
-      if (
-        typeof updates.secondaryColor !== "string" ||
-        !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(
-          updates.secondaryColor
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Please provide a valid secondary color.",
+        if (!store) {
+            return res.status(404).json({
+                success: false,
+                message: "No store was found for your account.",
+            });
+        }
+
+        // Prevent another store from using the same slug
+        if (updates.slug !== undefined) {
+            const existingStore = await Store.findOne({
+                slug: updates.slug,
+                _id: { $ne: store._id },
+            });
+
+            if (existingStore) {
+                return res.status(409).json({
+                    success: false,
+                    message:
+                        "This store URL is already in use. Please choose another.",
+                });
+            }
+        }
+
+        // Apply permitted updates
+        for (const [field, value] of Object.entries(updates)) {
+            store[field] = value;
+        }
+
+        await store.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Your store has been updated successfully.",
+            store,
         });
-      }
+    } catch (error) {
+        console.error("Update store error:", error);
+        return handleDatabaseError(res, error);
     }
-
-    // Validate selected theme
-    if (updates.theme !== undefined) {
-      const allowedThemes = ["modern", "minimal", "boutique"];
-
-      if (!allowedThemes.includes(updates.theme)) {
-        return res.status(400).json({
-          success: false,
-          message: "Please select a valid store theme.",
-        });
-      }
-    }
-
-    // Enforce the merchant's theme entitlement
-if (updates.theme !== undefined) {
-  const { plan, entitlements } =
-    await getMerchantEntitlements(ownerId);
-
-  if (!entitlements.themes.includes(updates.theme)) {
-    return res.status(403).json({
-      success: false,
-      code: "THEME_NOT_INCLUDED_IN_PLAN",
-      message:
-        `The ${updates.theme} theme is not included in your ` +
-        `${plan.name} plan. Please upgrade to access this theme.`,
-      currentPlan: plan.key,
-      allowedThemes: entitlements.themes,
-    });
-  }
-}
-
-    // Validate and generate store slug
-    if (updates.slug !== undefined) {
-      if (
-        typeof updates.slug !== "string" ||
-        !updates.slug.trim()
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Please provide a valid store URL.",
-        });
-      }
-
-      updates.slug = slugify(updates.slug);
-
-      if (!updates.slug) {
-        return res.status(400).json({
-          success: false,
-          message: "Please provide a valid store URL.",
-        });
-      }
-    }
-
-    // Trim text fields
-    for (const field of [
-      "businessName",
-      "storeName",
-      "category",
-      "description",
-      "logoUrl",
-    ]) {
-      if (typeof updates[field] === "string") {
-        updates[field] = updates[field].trim();
-      }
-    }
-
-    // Find the authenticated user's store
-    const store = await Store.findOne({ owner: ownerId });
-
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: "No store was found for your account.",
-      });
-    }
-
-    // Prevent another store from using the same slug
-    if (updates.slug !== undefined) {
-      const existingStore = await Store.findOne({
-        slug: updates.slug,
-        _id: { $ne: store._id },
-      });
-
-      if (existingStore) {
-        return res.status(409).json({
-          success: false,
-          message: "This store URL is already in use. Please choose another.",
-        });
-      }
-    }
-
-    // Apply permitted updates
-    for (const [field, value] of Object.entries(updates)) {
-      store[field] = value;
-    }
-
-    await store.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Your store has been updated successfully.",
-      store,
-    });
-  } catch (error) {
-    console.error("Update store error:", error);
-    return handleDatabaseError(res, error);
-  }
 };
 
 
-// PATCH /olatinn/api/store-front/:storeId
+// ============================================================
+// UPDATE STORE BY ID
+// PATCH /olatinn/api/stores/:storeId
+// ============================================================
+
 const updateStoreById = async (req, res) => {
     try {
         const ownerId = getAuthenticatedUserId(req);
@@ -694,6 +816,7 @@ const updateStoreById = async (req, res) => {
             });
         }
 
+        // Validate store ID
         if (!mongoose.Types.ObjectId.isValid(storeId)) {
             return res.status(400).json({
                 success: false,
@@ -701,6 +824,7 @@ const updateStoreById = async (req, res) => {
             });
         }
 
+        // Find the store belonging to this user
         const store = await Store.findOne({
             _id: storeId,
             owner: ownerId,
@@ -709,10 +833,12 @@ const updateStoreById = async (req, res) => {
         if (!store) {
             return res.status(404).json({
                 success: false,
-                message: "Store not found or you do not have permission to edit it.",
+                message:
+                    "Store not found or you do not have permission to edit it.",
             });
         }
 
+        // Allowed fields
         const allowedFields = [
             "businessName",
             "storeName",
@@ -723,33 +849,44 @@ const updateStoreById = async (req, res) => {
             "primaryColor",
             "secondaryColor",
             "theme",
+            "contactEmail",
+            "contactPhone",
             "whatsappNumber",
         ];
 
         const updates = {};
 
         for (const field of allowedFields) {
-            if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    req.body,
+                    field
+                )
+            ) {
                 updates[field] = req.body[field];
             }
         }
 
+        // Require at least one field
         if (Object.keys(updates).length === 0) {
             return res.status(400).json({
                 success: false,
-                message: "Please provide at least one field to update.",
+                message:
+                    "Please provide at least one field to update.",
             });
         }
 
-        const requiredFields = [
+        // Validate required text fields
+        for (const field of [
             "businessName",
             "storeName",
             "category",
-        ];
-
-        for (const field of requiredFields) {
+        ]) {
             if (
-                Object.prototype.hasOwnProperty.call(updates, field) &&
+                Object.prototype.hasOwnProperty.call(
+                    updates,
+                    field
+                ) &&
                 (
                     typeof updates[field] !== "string" ||
                     !updates[field].trim()
@@ -762,9 +899,13 @@ const updateStoreById = async (req, res) => {
             }
         }
 
+        // Validate description and logo URL
         for (const field of ["description", "logoUrl"]) {
             if (
-                Object.prototype.hasOwnProperty.call(updates, field) &&
+                Object.prototype.hasOwnProperty.call(
+                    updates,
+                    field
+                ) &&
                 typeof updates[field] !== "string"
             ) {
                 return res.status(400).json({
@@ -774,8 +915,63 @@ const updateStoreById = async (req, res) => {
             }
         }
 
-        for (const field of ["primaryColor", "secondaryColor"]) {
-            if (Object.prototype.hasOwnProperty.call(updates, field)) {
+        for (const field of ["contactEmail", "contactPhone"]) {
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    updates,
+                    field
+                ) &&
+                typeof updates[field] !== "string"
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: `${field} must be text.`,
+                });
+            }
+        }
+
+        // Validate WhatsApp number
+        if (
+            Object.prototype.hasOwnProperty.call(
+                updates,
+                "whatsappNumber"
+            )
+        ) {
+            if (typeof updates.whatsappNumber !== "string") {
+                return res.status(400).json({
+                    success: false,
+                    message: "WhatsApp number must be a string.",
+                });
+            }
+
+            updates.whatsappNumber =
+                updates.whatsappNumber.trim();
+
+            if (
+                updates.whatsappNumber !== "" &&
+                !/^\+?[1-9]\d{7,14}$/.test(
+                    updates.whatsappNumber
+                )
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "Enter a valid international WhatsApp number, including the country code.",
+                });
+            }
+        }
+
+        // Validate colors
+        for (const field of [
+            "primaryColor",
+            "secondaryColor",
+        ]) {
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    updates,
+                    field
+                )
+            ) {
                 if (
                     typeof updates[field] !== "string" ||
                     !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(
@@ -784,21 +980,30 @@ const updateStoreById = async (req, res) => {
                 ) {
                     return res.status(400).json({
                         success: false,
-                        message: `${field} must be a valid hexadecimal color.`,
+                        message:
+                            `${field} must be a valid hexadecimal color.`,
                     });
                 }
             }
         }
 
+        // Enforce theme entitlement
         if (
-            Object.prototype.hasOwnProperty.call(updates, "theme")
+            Object.prototype.hasOwnProperty.call(
+                updates,
+                "theme"
+            )
         ) {
-            const account = await getMerchantEntitlements(ownerId);
-            const allowedThemes = account.entitlements?.themes || [];
+            const account =
+                await getMerchantEntitlements(ownerId);
+
+            const allowedThemes =
+                account.entitlements?.themes || [];
 
             if (!allowedThemes.includes(updates.theme)) {
                 return res.status(403).json({
                     success: false,
+                    code: "THEME_NOT_INCLUDED_IN_PLAN",
                     message:
                         "Your current plan does not include this store theme.",
                     allowedThemes,
@@ -806,7 +1011,13 @@ const updateStoreById = async (req, res) => {
             }
         }
 
-        if (Object.prototype.hasOwnProperty.call(updates, "slug")) {
+        // Validate slug and check uniqueness
+        if (
+            Object.prototype.hasOwnProperty.call(
+                updates,
+                "slug"
+            )
+        ) {
             if (
                 typeof updates.slug !== "string" ||
                 !updates.slug.trim()
@@ -834,51 +1045,33 @@ const updateStoreById = async (req, res) => {
             if (duplicateSlug) {
                 return res.status(409).json({
                     success: false,
-                    message: "This store URL is already in use.",
+                    message:
+                        "This store URL is already in use.",
                 });
             }
         }
 
-        
-            if (req.body.whatsappNumber !== undefined) {
-    if (typeof req.body.whatsappNumber !== "string") {
-        return res.status(400).json({
-            success: false,
-            message: "WhatsApp number must be a string.",
-        });
-    }
-
-    const whatsappNumber = req.body.whatsappNumber.trim();
-
-    if (
-        whatsappNumber !== "" &&
-        !/^\+?[1-9]\d{7,14}$/.test(whatsappNumber)
-    ) {
-        return res.status(400).json({
-            success: false,
-            message:
-                "Enter a valid international WhatsApp number, including the country code.",
-        });
-    }
-
-    store.whatsappNumber = whatsappNumber;
-}
-        
-
+        // Trim text fields
         for (const field of [
             "businessName",
             "storeName",
             "category",
             "description",
             "logoUrl",
+            "contactEmail",
+            "contactPhone",
         ]) {
             if (
-                Object.prototype.hasOwnProperty.call(updates, field)
+                Object.prototype.hasOwnProperty.call(
+                    updates,
+                    field
+                )
             ) {
                 updates[field] = updates[field].trim();
             }
         }
 
+        // Apply updates
         Object.assign(store, updates);
 
         await store.save();
@@ -893,7 +1086,6 @@ const updateStoreById = async (req, res) => {
         return handleDatabaseError(res, error);
     }
 };
-
 
 // GET /olatinn/api/store-front/public/:slug
 const getPublicStore = async (req, res) => {
@@ -911,13 +1103,14 @@ const getPublicStore = async (req, res) => {
             slug: slugify(slug),
             status: "published",
         }).select(
-            "businessName storeName slug category description logoUrl primaryColor secondaryColor theme status publishedAt createdAt"
+            "businessName storeName slug category description logoUrl primaryColor secondaryColor theme status publishedAt createdAt contactEmail contactPhone whatsappNumber currency"
         );
 
         if (!store) {
             return res.status(404).json({
                 success: false,
-                message: "This store does not exist or is not currently published.",
+                message:
+                    "This store does not exist or is not currently published.",
             });
         }
 
@@ -931,57 +1124,76 @@ const getPublicStore = async (req, res) => {
     }
 };
 
-
-
 // PATCH /olatinn/api/store-front/my-store/publish
+// POST /olatinn/api/store-front/publish
 const publishStore = async (req, res) => {
-  try {
-    const ownerId = getAuthenticatedUserId(req);
+    try {
+        const ownerId = getAuthenticatedUserId(req);
 
-    if (!ownerId) {
-      return res.status(401).json({
-        success: false,
-        message: "Please sign in to publish your store.",
-      });
+        if (!ownerId) {
+            return res.status(401).json({
+                success: false,
+                message: "Please sign in to publish your store.",
+            });
+        }
+
+        const store = await Store.findOne({ owner: ownerId });
+
+        if (!store) {
+            return res.status(404).json({
+                success: false,
+                message: "Create your store before publishing it.",
+            });
+        }
+
+        // Validate required store details.
+        if (
+            !store.businessName?.trim() ||
+            !store.storeName?.trim() ||
+            !store.slug?.trim() ||
+            !store.category?.trim()
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Complete the required store details before publishing.",
+            });
+        }
+
+        // Validate WhatsApp number if the merchant has supplied one.
+        const whatsappNumber = (
+            store.whatsappNumber || ""
+        ).trim();
+
+        if (
+            whatsappNumber &&
+            !/^\+?[1-9]\d{7,14}$/.test(whatsappNumber)
+        ) {
+            return res.status(400).json({
+                success: false,
+                code: "INVALID_WHATSAPP_NUMBER",
+                message:
+                    "Please enter a valid WhatsApp number with its country code before publishing.",
+            });
+        }
+
+        // Publish the store.
+        store.status = "published";
+        store.publishedAt = store.publishedAt || new Date();
+
+        await store.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Your store is now published.",
+            store,
+            publicUrl: `/store/${store.slug}`,
+        });
+    } catch (error) {
+        console.error("Publish store error:", error);
+        return handleDatabaseError(res, error);
     }
-
-    const store = await Store.findOne({ owner: ownerId });
-
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: "Create your store before publishing it.",
-      });
-    }
-
-    if (
-      !store.businessName?.trim() ||
-      !store.storeName?.trim() ||
-      !store.slug?.trim() ||
-      !store.category?.trim()
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Complete the required store details before publishing.",
-      });
-    }
-
-    store.status = "published";
-    store.publishedAt = store.publishedAt || new Date();
-
-    await store.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Your store is now published.",
-      store,
-      publicUrl: `/store/${store.slug}`,
-    });
-  } catch (error) {
-    return handleDatabaseError(res, error);
-  }
 };
-
 
 
 // PATCH /olatinn/api/store-front/:storeId/publish
@@ -1016,6 +1228,7 @@ const publishStoreById = async (req, res) => {
             });
         }
 
+        // Validate required store details.
         if (
             !store.businessName?.trim() ||
             !store.storeName?.trim() ||
@@ -1024,10 +1237,29 @@ const publishStoreById = async (req, res) => {
         ) {
             return res.status(400).json({
                 success: false,
-                message: "Complete the required store details before publishing.",
+                message:
+                    "Complete the required store details before publishing.",
             });
         }
 
+        // Validate WhatsApp number if the merchant has supplied one.
+        const whatsappNumber = (
+            store.whatsappNumber || ""
+        ).trim();
+
+        if (
+            whatsappNumber &&
+            !/^\+?[1-9]\d{7,14}$/.test(whatsappNumber)
+        ) {
+            return res.status(400).json({
+                success: false,
+                code: "INVALID_WHATSAPP_NUMBER",
+                message:
+                    "Please enter a valid WhatsApp number with its country code before publishing.",
+            });
+        }
+
+        // Publish the store.
         store.status = "published";
         store.publishedAt = store.publishedAt || new Date();
 
@@ -1044,7 +1276,6 @@ const publishStoreById = async (req, res) => {
         return handleDatabaseError(res, error);
     }
 };
-
 
 
 // PATCH /olatinn/api/store-front/:storeId/unpublish
