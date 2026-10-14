@@ -184,7 +184,7 @@ const storeSchema = new mongoose.Schema(
     },
 
     socialLinks: {
-      instagram: { type: String, default: "" },
+      instagram: { type: String, default: "" }, 
       facebook: { type: String, default: "" },
       tiktok: { type: String, default: "" },
       whatsapp: { type: String, default: "" },

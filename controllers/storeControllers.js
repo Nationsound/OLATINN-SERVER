@@ -1400,6 +1400,7 @@ const getPaymentSettings = async (req, res) => {
       });
     }
 
+    // Only the authenticated owner can access this store's settings.
     const store = await Store.findOne({
       _id: storeId,
       owner: ownerId,
@@ -1412,7 +1413,8 @@ const getPaymentSettings = async (req, res) => {
     if (!store) {
       return res.status(404).json({
         success: false,
-        message: "Store not found or you do not have permission to access it.",
+        message:
+          "Store not found or you do not have permission to access it.",
       });
     }
 
@@ -1427,7 +1429,8 @@ const getPaymentSettings = async (req, res) => {
         accountType: settings.accountType || "",
         branchCode: settings.branchCode || "",
         routingDetails: settings.routingDetails || "",
-        paymentCurrency: settings.paymentCurrency || store.currency || "USD",
+        paymentCurrency:
+          settings.paymentCurrency || store.currency || "USD",
         customerInstructions: settings.customerInstructions || "",
         bankTransferEnabled: Boolean(settings.bankTransferEnabled),
         updatedAt: settings.updatedAt || null,
@@ -1464,6 +1467,32 @@ const updatePaymentSettings = async (req, res) => {
       });
     }
 
+    // The frontend must send:
+    // { paymentSettings: { bankName: "...", ... } }
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      Array.isArray(req.body)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide valid payment settings.",
+      });
+    }
+
+    const paymentSettings = req.body.paymentSettings;
+
+    if (
+      !paymentSettings ||
+      typeof paymentSettings !== "object" ||
+      Array.isArray(paymentSettings)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide valid payment-setting fields.",
+      });
+    }
+
     const allowedFields = [
       "accountHolderName",
       "bankName",
@@ -1476,22 +1505,13 @@ const updatePaymentSettings = async (req, res) => {
       "bankTransferEnabled",
     ];
 
-    if (
-      !req.body ||
-      typeof req.body !== "object" ||
-      Array.isArray(req.body)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide valid payment settings.",
-      });
-    }
-
-    const suppliedFields = Object.keys(req.body);
+    const suppliedFields = Object.keys(paymentSettings);
 
     if (
       suppliedFields.length === 0 ||
-      suppliedFields.some((field) => !allowedFields.includes(field))
+      suppliedFields.some(
+        (field) => !allowedFields.includes(field)
+      )
     ) {
       return res.status(400).json({
         success: false,
@@ -1499,6 +1519,7 @@ const updatePaymentSettings = async (req, res) => {
       });
     }
 
+    // Find the store belonging to this authenticated merchant.
     const store = await Store.findOne({
       _id: storeId,
       owner: ownerId,
@@ -1511,7 +1532,8 @@ const updatePaymentSettings = async (req, res) => {
     if (!store) {
       return res.status(404).json({
         success: false,
-        message: "Store not found or you do not have permission to edit it.",
+        message:
+          "Store not found or you do not have permission to edit it.",
       });
     }
 
@@ -1526,10 +1548,14 @@ const updatePaymentSettings = async (req, res) => {
       "customerInstructions",
     ];
 
+    // Validate submitted values before saving anything.
     for (const field of textFields) {
       if (
-        Object.prototype.hasOwnProperty.call(req.body, field) &&
-        typeof req.body[field] !== "string"
+        Object.prototype.hasOwnProperty.call(
+          paymentSettings,
+          field
+        ) &&
+        typeof paymentSettings[field] !== "string"
       ) {
         return res.status(400).json({
           success: false,
@@ -1540,10 +1566,10 @@ const updatePaymentSettings = async (req, res) => {
 
     if (
       Object.prototype.hasOwnProperty.call(
-        req.body,
+        paymentSettings,
         "bankTransferEnabled"
       ) &&
-      typeof req.body.bankTransferEnabled !== "boolean"
+      typeof paymentSettings.bankTransferEnabled !== "boolean"
     ) {
       return res.status(400).json({
         success: false,
@@ -1552,6 +1578,7 @@ const updatePaymentSettings = async (req, res) => {
     }
 
     const validCurrencies = ["USD", "NGN", "ZAR", "GBP", "EUR"];
+
     const validAccountTypes = [
       "",
       "savings",
@@ -1560,27 +1587,6 @@ const updatePaymentSettings = async (req, res) => {
       "other",
     ];
 
-    if (req.body.paymentCurrency !== undefined) {
-      req.body.paymentCurrency = req.body.paymentCurrency.trim().toUpperCase();
-
-      if (!validCurrencies.includes(req.body.paymentCurrency)) {
-        return res.status(400).json({
-          success: false,
-          message: "Please select a supported payment currency.",
-        });
-      }
-    }
-
-    if (
-      req.body.accountType !== undefined &&
-      !validAccountTypes.includes(req.body.accountType.trim().toLowerCase())
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Please select a valid account type.",
-      });
-    }
-
     const lengthLimits = {
       accountHolderName: 120,
       bankName: 100,
@@ -1588,40 +1594,90 @@ const updatePaymentSettings = async (req, res) => {
       accountType: 20,
       branchCode: 30,
       routingDetails: 100,
+      paymentCurrency: 3,
       customerInstructions: 1500,
     };
 
-    for (const [field, maxLength] of Object.entries(lengthLimits)) {
-      if (
-        req.body[field] !== undefined &&
-        req.body[field].trim().length > maxLength
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: `${field} cannot exceed ${maxLength} characters.`,
-        });
-      }
-    }
-
-    const settings = store.paymentSettings;
+    // Normalise submitted text without changing req.body.
+    const cleanedSettings = {};
 
     for (const field of textFields) {
-      if (req.body[field] !== undefined) {
-        let value = req.body[field].trim();
+      if (
+        Object.prototype.hasOwnProperty.call(
+          paymentSettings,
+          field
+        )
+      ) {
+        let value = paymentSettings[field].trim();
 
         if (field === "accountType") {
           value = value.toLowerCase();
         }
 
-        settings[field] = value;
+        if (field === "paymentCurrency") {
+          value = value.toUpperCase();
+        }
+
+        if (value.length > lengthLimits[field]) {
+          return res.status(400).json({
+            success: false,
+            message:
+              `${field} cannot exceed ${lengthLimits[field]} characters.`,
+          });
+        }
+
+        cleanedSettings[field] = value;
       }
     }
 
-    if (req.body.bankTransferEnabled !== undefined) {
-      settings.bankTransferEnabled = req.body.bankTransferEnabled;
+    if (
+      cleanedSettings.paymentCurrency !== undefined &&
+      !validCurrencies.includes(cleanedSettings.paymentCurrency)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select a supported payment currency.",
+      });
     }
 
-    // Do not enable bank transfer without the essential bank details.
+    if (
+      cleanedSettings.accountType !== undefined &&
+      !validAccountTypes.includes(cleanedSettings.accountType)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select a valid account type.",
+      });
+    }
+
+    const settings = store.paymentSettings;
+
+    // Apply only submitted fields.
+    // Omitted fields retain their existing saved values.
+    for (const field of textFields) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          cleanedSettings,
+          field
+        )
+      ) {
+        settings[field] = cleanedSettings[field];
+      }
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        paymentSettings,
+        "bankTransferEnabled"
+      )
+    ) {
+      settings.bankTransferEnabled =
+        paymentSettings.bankTransferEnabled;
+    }
+
+    // Branch code and routing details are optional.
+    // Account holder, bank name and account number are required
+    // only when bank transfers are enabled.
     if (settings.bankTransferEnabled) {
       if (
         !settings.accountHolderName?.trim() ||
@@ -1640,7 +1696,6 @@ const updatePaymentSettings = async (req, res) => {
 
     await store.save();
 
-    // Never return the complete Store document from this endpoint.
     return res.status(200).json({
       success: true,
       message: "Payment settings saved successfully.",
@@ -1651,7 +1706,8 @@ const updatePaymentSettings = async (req, res) => {
         accountType: settings.accountType || "",
         branchCode: settings.branchCode || "",
         routingDetails: settings.routingDetails || "",
-        paymentCurrency: settings.paymentCurrency || store.currency || "USD",
+        paymentCurrency:
+          settings.paymentCurrency || store.currency || "USD",
         customerInstructions: settings.customerInstructions || "",
         bankTransferEnabled: Boolean(settings.bankTransferEnabled),
         updatedAt: settings.updatedAt || null,
