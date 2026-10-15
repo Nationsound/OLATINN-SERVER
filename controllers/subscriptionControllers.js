@@ -2,14 +2,17 @@ const mongoose = require("mongoose");
 
 const Plan = require("../models/planSchema");
 const Subscription = require("../models/subscriptionSchema");
+const user = require("../models/authScema");
 
 const cloudinary = require("../config/cloudinary");
 const fs = require("fs/promises");
+const trsnsporter = require("../config/mail.js");
 
 const {
   getCurrentSubscription,
   hasPendingManualPayment,
-} = require("../services/subscriptionServices");
+} = require("../services/subscriptionServices"); 
+
 
 const removeTemporaryFile = async (filePath) => {
   if (filePath) {
@@ -588,6 +591,153 @@ const streamPaymentReceipt = async (req, res) => {
   }
 };
 
+
+const sendSubscriptionActivationEmail = async ({
+  email,
+  name,
+  planName,
+  billingInterval,
+  amount,
+  currency,
+  currentPeriodStart,
+  currentPeriodEnd,
+}) => {
+  if (!email) {
+    console.warn(
+      "Subscription activation email skipped: no recipient email."
+    );
+
+    return;
+  }
+
+  const formattedAmount = new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: currency || "NGN",
+    maximumFractionDigits: 2,
+  }).format(Number(amount || 0) / 100);
+
+  const formattedStart = new Date(
+    currentPeriodStart
+  ).toLocaleDateString("en-NG", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  const formattedEnd = new Date(
+    currentPeriodEnd
+  ).toLocaleDateString("en-NG", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  const intervalLabel =
+    billingInterval === "yearly" ? "Yearly" : "Monthly";
+
+  const mailOptions = {
+    from: `"Olatinn" <${process.env.GMAIL_USER}>`,
+    to: email,
+    subject: `Your Olatinn ${planName} subscription is active`,
+    text: `
+Hello ${name || "there"},
+
+Your Olatinn Store Front subscription has been successfully approved and activated.
+
+Plan: ${planName}
+Billing: ${intervalLabel}
+Amount: ${formattedAmount}
+
+Subscription period:
+${formattedStart} to ${formattedEnd}
+
+Your Premium Store Front benefits are now active.
+
+Thank you for choosing Olatinn.
+
+Olatinn
+    `.trim(),
+
+    html: `
+      <div style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;">
+        <div style="max-width:620px;margin:0 auto;padding:40px 20px;">
+          
+          <div style="background:#000271;border-radius:18px 18px 0 0;padding:30px;text-align:center;">
+            <h1 style="margin:0;color:#ffffff;font-size:28px;">
+              Olatinn
+            </h1>
+
+            <p style="margin:8px 0 0;color:#bfefff;font-size:14px;">
+              Store Front
+            </p>
+          </div>
+
+          <div style="background:#ffffff;padding:35px 30px;border-radius:0 0 18px 18px;">
+            
+            <h2 style="margin:0 0 15px;color:#000271;font-size:24px;">
+              Subscription Activated
+            </h2>
+
+            <p style="color:#475569;font-size:15px;line-height:1.7;">
+              Hello ${name || "there"},
+            </p>
+
+            <p style="color:#475569;font-size:15px;line-height:1.7;">
+              Your Olatinn Store Front subscription has been
+              successfully approved and activated.
+            </p>
+
+            <div style="margin:25px 0;padding:22px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;">
+              
+              <p style="margin:0 0 10px;color:#64748b;font-size:12px;text-transform:uppercase;">
+                Subscription
+              </p>
+
+              <p style="margin:0 0 8px;color:#000271;font-size:21px;font-weight:bold;">
+                ${planName}
+              </p>
+
+              <p style="margin:6px 0;color:#475569;font-size:14px;">
+                <strong>Billing:</strong> ${intervalLabel}
+              </p>
+
+              <p style="margin:6px 0;color:#475569;font-size:14px;">
+                <strong>Amount:</strong> ${formattedAmount}
+              </p>
+
+              <p style="margin:6px 0;color:#475569;font-size:14px;">
+                <strong>Start:</strong> ${formattedStart}
+              </p>
+
+              <p style="margin:6px 0;color:#475569;font-size:14px;">
+                <strong>Expiry:</strong> ${formattedEnd}
+              </p>
+
+            </div>
+
+            <div style="margin:25px 0;padding:16px;border-left:4px solid #17acdd;background:#effcff;">
+              <p style="margin:0;color:#334155;font-size:14px;line-height:1.6;">
+                Your Premium Store Front benefits are now active.
+              </p>
+            </div>
+
+            <p style="color:#475569;font-size:15px;line-height:1.7;">
+              Thank you for choosing Olatinn.
+            </p>
+
+            <p style="margin-top:30px;color:#64748b;font-size:13px;">
+              Olatinn Store Front
+            </p>
+
+          </div>
+        </div>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
 const getPaymentReceipt = streamPaymentReceipt;
 
 const approvePayment = async (req, res) => {
@@ -652,11 +802,43 @@ const approvePayment = async (req, res) => {
 
     await subscription.save();
 
-    return res.status(200).json({
-      success: true,
-      message: "Payment approved and subscription activated.",
-      subscription,
+// ========================================
+// Send subscription activation email
+// ========================================
+
+try {
+  const owner = await User.findById(subscription.owner).select(
+    "email fullName name"
+  );
+
+  if (owner?.email) {
+    await sendSubscriptionActivationEmail({
+      email: owner.email,
+      name: owner.fullName || owner.name || "there",
+      planName: subscription.plan?.name || "Premium",
+      billingInterval: subscription.billingInterval,
+      amount: subscription.priceAtPurchase,
+      currency: subscription.currencyAtPurchase,
+      currentPeriodStart: subscription.currentPeriodStart,
+      currentPeriodEnd: subscription.currentPeriodEnd,
     });
+  } else {
+    console.warn(
+      "Subscription activated, but owner email was not found."
+    );
+  }
+} catch (emailError) {
+  console.error(
+    "Subscription activated, but activation email failed:",
+    emailError
+  );
+}
+
+return res.status(200).json({
+  success: true,
+  message: "Payment approved and subscription activated.",
+  subscription,
+});
   } catch (error) {
     console.error("Approve payment error:", error);
 
@@ -749,6 +931,7 @@ module.exports = {
   cancelSubscription,
   getPendingPayments,
   streamPaymentReceipt,
+  sendSubscriptionActivationEmail,
   getPaymentReceipt,
   approvePayment,
   rejectPayment,

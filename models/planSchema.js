@@ -36,7 +36,7 @@ const planSchema = new mongoose.Schema(
         default: "USD",
       },
 
-      // Integer amounts in the smallest currency unit.
+      // Integer amounts in the smallest currency unit. 
       // Keep null until real prices are configured.
       monthly: {
         type: Number,
