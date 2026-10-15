@@ -514,22 +514,34 @@ const cancelSubscription = async (req, res) => {
   }
 };
 
+// ========================================
+// Get Pending Manual Payments
+// ========================================
+
 const getPendingPayments = async (req, res) => {
   try {
+    const adminId = getAdminId(req);
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: "Administrator authentication required.",
+      });
+    }
+
     const subscriptions = await Subscription.find({
       status: "incomplete",
       paymentProvider: "manual",
       paymentSubmittedAt: { $ne: null },
     })
-      .populate("owner", "fullName email")
-      .populate("plan", "key name")
-      .select(
-  "-paymentReceiptPath -paymentReceiptUrl -paymentReceiptPublicId"
-)
+      .populate("owner", "fullName email name")
+      .populate("plan", "key name prices")
+      .populate("reviewedBy", "email fullName name")
       .sort({ paymentSubmittedAt: 1 });
 
     return res.status(200).json({
       success: true,
+      count: subscriptions.length,
       subscriptions,
     });
   } catch (error) {
@@ -738,49 +750,11 @@ Olatinn
   await transporter.sendMail(mailOptions);
 };
 
-// ========================================
-// Get pending manual payments
-// ========================================
-
-// const getPendingPayments = async (req, res) => {
-//   try {
-//     const adminId = getAdminId(req);
-
-//     if (!adminId) {
-//       return res.status(401).json({
-//         success: false,
-//         message: "Administrator authentication required.",
-//       });
-//     }
-
-//     const pendingPayments = await Subscription.find({
-//       status: "incomplete",
-//       paymentProvider: "manual",
-//       paymentSubmittedAt: { $ne: null },
-//     })
-//       .populate("owner", "email fullName name")
-//       .populate("plan", "name key prices")
-//       .sort({ paymentSubmittedAt: -1 });
-
-//     return res.status(200).json({
-//       success: true,
-//       count: pendingPayments.length,
-//       payments: pendingPayments,
-//     });
-//   } catch (error) {
-//     console.error("Get pending payments error:", error);
-
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to retrieve pending payments.",
-//     });
-//   }
-// };
 
 
 // ========================================
-// Get payment review history
-// Approved + Rejected payments
+// Get Payment History
+// Approved + Rejected
 // ========================================
 
 const getPaymentHistory = async (req, res) => {
@@ -823,7 +797,7 @@ const getPaymentHistory = async (req, res) => {
 
 
 // ========================================
-// Get Premium subscribers
+// Get All Premium Subscribers
 // Active + Inactive
 // ========================================
 
@@ -838,21 +812,21 @@ const getPremiumSubscribers = async (req, res) => {
       });
     }
 
-    const premiumSubscribers = await Subscription.find({
-      plan: {
-        $exists: true,
-        $ne: null,
-      },
-    })
+    const premiumSubscribers = await Subscription.find({})
       .populate("owner", "email fullName name")
       .populate("plan", "name key prices")
       .populate("reviewedBy", "email fullName name")
       .sort({ currentPeriodEnd: -1 });
 
+    const filteredSubscribers = premiumSubscribers.filter(
+      (subscription) =>
+        subscription.plan?.key === "premium"
+    );
+
     return res.status(200).json({
       success: true,
-      count: premiumSubscribers.length,
-      subscribers: premiumSubscribers,
+      count: filteredSubscribers.length,
+      subscribers: filteredSubscribers,
     });
   } catch (error) {
     console.error("Get Premium subscribers error:", error);
@@ -864,8 +838,9 @@ const getPremiumSubscribers = async (req, res) => {
   }
 };
 
+
 // ========================================
-// Get active Premium subscribers
+// Get Active Premium Subscribers
 // ========================================
 
 const getActivePremiumSubscribers = async (req, res) => {
@@ -892,7 +867,8 @@ const getActivePremiumSubscribers = async (req, res) => {
       .sort({ currentPeriodEnd: -1 });
 
     const premiumSubscribers = subscribers.filter(
-      (subscription) => subscription.plan?.key === "premium"
+      (subscription) =>
+        subscription.plan?.key === "premium"
     );
 
     return res.status(200).json({
@@ -901,7 +877,10 @@ const getActivePremiumSubscribers = async (req, res) => {
       subscribers: premiumSubscribers,
     });
   } catch (error) {
-    console.error("Get active Premium subscribers error:", error);
+    console.error(
+      "Get active Premium subscribers error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -912,7 +891,7 @@ const getActivePremiumSubscribers = async (req, res) => {
 
 
 // ========================================
-// Get inactive Premium subscribers
+// Get Inactive Premium Subscribers
 // ========================================
 
 const getInactivePremiumSubscribers = async (req, res) => {
@@ -934,18 +913,20 @@ const getInactivePremiumSubscribers = async (req, res) => {
       .populate("reviewedBy", "email fullName name")
       .sort({ currentPeriodEnd: -1 });
 
-    const premiumSubscribers = subscribers.filter((subscription) => {
-      if (subscription.plan?.key !== "premium") {
-        return false;
+    const premiumSubscribers = subscribers.filter(
+      (subscription) => {
+        if (subscription.plan?.key !== "premium") {
+          return false;
+        }
+
+        const isActive =
+          subscription.status === "active" &&
+          subscription.currentPeriodEnd &&
+          new Date(subscription.currentPeriodEnd) > new Date();
+
+        return !isActive;
       }
-
-      const isActive =
-        subscription.status === "active" &&
-        subscription.currentPeriodEnd &&
-        new Date(subscription.currentPeriodEnd) > new Date();
-
-      return !isActive;
-    });
+    );
 
     return res.status(200).json({
       success: true,
@@ -953,7 +934,10 @@ const getInactivePremiumSubscribers = async (req, res) => {
       subscribers: premiumSubscribers,
     });
   } catch (error) {
-    console.error("Get inactive Premium subscribers error:", error);
+    console.error(
+      "Get inactive Premium subscribers error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
