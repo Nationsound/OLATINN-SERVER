@@ -738,6 +738,132 @@ Olatinn
   await transporter.sendMail(mailOptions);
 };
 
+// ========================================
+// Get pending manual payments
+// ========================================
+
+// const getPendingPayments = async (req, res) => {
+//   try {
+//     const adminId = getAdminId(req);
+
+//     if (!adminId) {
+//       return res.status(401).json({
+//         success: false,
+//         message: "Administrator authentication required.",
+//       });
+//     }
+
+//     const pendingPayments = await Subscription.find({
+//       status: "incomplete",
+//       paymentProvider: "manual",
+//       paymentSubmittedAt: { $ne: null },
+//     })
+//       .populate("owner", "email fullName name")
+//       .populate("plan", "name key prices")
+//       .sort({ paymentSubmittedAt: -1 });
+
+//     return res.status(200).json({
+//       success: true,
+//       count: pendingPayments.length,
+//       payments: pendingPayments,
+//     });
+//   } catch (error) {
+//     console.error("Get pending payments error:", error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to retrieve pending payments.",
+//     });
+//   }
+// };
+
+
+// ========================================
+// Get payment review history
+// Approved + Rejected payments
+// ========================================
+
+const getPaymentHistory = async (req, res) => {
+  try {
+    const adminId = getAdminId(req);
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: "Administrator authentication required.",
+      });
+    }
+
+    const payments = await Subscription.find({
+      paymentProvider: "manual",
+      reviewedAt: { $ne: null },
+      status: {
+        $in: ["active", "incomplete", "canceled", "ended"],
+      },
+    })
+      .populate("owner", "email fullName name")
+      .populate("plan", "name key prices")
+      .populate("reviewedBy", "email fullName name")
+      .sort({ reviewedAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: payments.length,
+      payments,
+    });
+  } catch (error) {
+    console.error("Get payment history error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to retrieve payment history.",
+    });
+  }
+};
+
+
+// ========================================
+// Get Premium subscribers
+// Active + Inactive
+// ========================================
+
+const getPremiumSubscribers = async (req, res) => {
+  try {
+    const adminId = getAdminId(req);
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: "Administrator authentication required.",
+      });
+    }
+
+    const premiumSubscribers = await Subscription.find({
+      plan: {
+        $exists: true,
+        $ne: null,
+      },
+    })
+      .populate("owner", "email fullName name")
+      .populate("plan", "name key prices")
+      .populate("reviewedBy", "email fullName name")
+      .sort({ currentPeriodEnd: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: premiumSubscribers.length,
+      subscribers: premiumSubscribers,
+    });
+  } catch (error) {
+    console.error("Get Premium subscribers error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to retrieve Premium subscribers.",
+    });
+  }
+};
+
 const getPaymentReceipt = streamPaymentReceipt;
 
 const approvePayment = async (req, res) => {
@@ -933,6 +1059,8 @@ module.exports = {
   streamPaymentReceipt,
   sendSubscriptionActivationEmail,
   getPaymentReceipt,
+  getPaymentHistory,
+  getPremiumSubscribers,
   approvePayment,
   rejectPayment,
   getConfiguredBankDetails,

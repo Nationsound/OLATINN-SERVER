@@ -54,6 +54,18 @@ router.get(
 );
 
 router.get(
+  "/admin/history",
+  protectAdmin,
+  subscriptionControllers.getPaymentHistory
+);
+
+router.get(
+  "/admin/premium-subscribers",
+  protectAdmin,
+  subscriptionControllers.getPremiumSubscribers
+);
+
+router.get(
   "/admin/:id/receipt",
   protectAdmin,
   subscriptionControllers.streamPaymentReceipt
