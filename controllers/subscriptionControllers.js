@@ -864,6 +864,104 @@ const getPremiumSubscribers = async (req, res) => {
   }
 };
 
+// ========================================
+// Get active Premium subscribers
+// ========================================
+
+const getActivePremiumSubscribers = async (req, res) => {
+  try {
+    const adminId = getAdminId(req);
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: "Administrator authentication required.",
+      });
+    }
+
+    const subscribers = await Subscription.find({
+      status: "active",
+      currentPeriodEnd: {
+        $gt: new Date(),
+      },
+      paymentProvider: "manual",
+    })
+      .populate("owner", "email fullName name")
+      .populate("plan", "name key prices")
+      .populate("reviewedBy", "email fullName name")
+      .sort({ currentPeriodEnd: -1 });
+
+    const premiumSubscribers = subscribers.filter(
+      (subscription) => subscription.plan?.key === "premium"
+    );
+
+    return res.status(200).json({
+      success: true,
+      count: premiumSubscribers.length,
+      subscribers: premiumSubscribers,
+    });
+  } catch (error) {
+    console.error("Get active Premium subscribers error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to retrieve active Premium subscribers.",
+    });
+  }
+};
+
+
+// ========================================
+// Get inactive Premium subscribers
+// ========================================
+
+const getInactivePremiumSubscribers = async (req, res) => {
+  try {
+    const adminId = getAdminId(req);
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: "Administrator authentication required.",
+      });
+    }
+
+    const subscribers = await Subscription.find({
+      paymentProvider: "manual",
+    })
+      .populate("owner", "email fullName name")
+      .populate("plan", "name key prices")
+      .populate("reviewedBy", "email fullName name")
+      .sort({ currentPeriodEnd: -1 });
+
+    const premiumSubscribers = subscribers.filter((subscription) => {
+      if (subscription.plan?.key !== "premium") {
+        return false;
+      }
+
+      const isActive =
+        subscription.status === "active" &&
+        subscription.currentPeriodEnd &&
+        new Date(subscription.currentPeriodEnd) > new Date();
+
+      return !isActive;
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: premiumSubscribers.length,
+      subscribers: premiumSubscribers,
+    });
+  } catch (error) {
+    console.error("Get inactive Premium subscribers error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to retrieve inactive Premium subscribers.",
+    });
+  }
+};
+
 const getPaymentReceipt = streamPaymentReceipt;
 
 const approvePayment = async (req, res) => {
@@ -1061,6 +1159,8 @@ module.exports = {
   getPaymentReceipt,
   getPaymentHistory,
   getPremiumSubscribers,
+  getActivePremiumSubscribers,
+  getInactivePremiumSubscribers,
   approvePayment,
   rejectPayment,
   getConfiguredBankDetails,

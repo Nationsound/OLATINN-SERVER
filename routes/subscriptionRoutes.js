@@ -66,6 +66,18 @@ router.get(
 );
 
 router.get(
+  "/admin/premium/active",
+  protectAdmin,
+  subscriptionControllers.getActivePremiumSubscribers
+);
+
+router.get(
+  "/admin/premium/inactive",
+  protectAdmin,
+  subscriptionControllers.getInactivePremiumSubscribers
+);
+
+router.get(
   "/admin/:id/receipt",
   protectAdmin,
   subscriptionControllers.streamPaymentReceipt
