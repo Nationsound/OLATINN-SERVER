@@ -772,36 +772,77 @@ const updateOrder = async (req, res) => {
         }
       }
 
-      const products =
-        await Product.find({
-          _id: {
-            $in: productIds,
-          },
-        });
+      const incomingProductIds = requestedItems.map((item) => item.productId);
 
-      if (
-        products.length !==
-        productIds.length
-      ) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "One or more products could not be found.",
-        });
-      }
+console.log("========================================");
+console.log("ORDER PRODUCT LOOKUP");
+console.log("Product IDs received:", incomingProductIds);
+console.log(
+  "Product ID types:",
+  incomingProductIds.map((id) => ({
+    id,
+    type: typeof id,
+    validObjectId: mongoose.Types.ObjectId.isValid(id),
+  }))
+);
+console.log("========================================");
 
-      const productMap =
-        new Map();
+// Convert the incoming string IDs to MongoDB ObjectIds
+const objectProductIds = incomingProductIds.map(
+  (id) => new mongoose.Types.ObjectId(id)
+);
 
-      products.forEach(
-        (product) => {
-          productMap.set(
-            product._id.toString(),
-            product
-          );
-        }
-      );
+const products = await Product.find({
+  _id: {
+    $in: objectProductIds,
+  },
+});
 
+console.log("PRODUCTS FOUND:", products.length);
+
+console.log(
+  "PRODUCTS FOUND DATA:",
+  products.map((product) => ({
+    id: product._id.toString(),
+    name: product.name,
+    store: product.store?.toString(),
+    owner: product.owner?.toString(),
+    price: product.price,
+    stockQuantity: product.stockQuantity,
+    status: product.status,
+  }))
+);
+
+if (products.length !== productIds.length) {
+  const foundIds = products.map((product) =>
+    product._id.toString()
+  );
+
+  const missingIds = productIds.filter(
+    (id) => !foundIds.includes(id)
+  );
+
+  console.log("========================================");
+  console.log("MISSING PRODUCT IDS:", missingIds);
+  console.log("FOUND PRODUCT IDS:", foundIds);
+  console.log("========================================");
+
+  return res.status(404).json({
+    success: false,
+    message: "One or more products could not be found.",
+    missingProductIds: missingIds,
+    foundProductIds: foundIds,
+  });
+}
+
+const productMap = new Map();
+
+products.forEach((product) => {
+  productMap.set(
+    product._id.toString(),
+    product
+  );
+});
       const updatedItems = [];
 
       let subtotal = 0;
