@@ -772,11 +772,14 @@ const updateOrder = async (req, res) => {
         }
       }
 
-      const incomingProductIds = requestedItems.map((item) => item.productId);
+      const incomingProductIds = requestedItems.map(
+  (item) => item.productId
+);
 
 console.log("========================================");
 console.log("ORDER PRODUCT LOOKUP");
 console.log("Product IDs received:", incomingProductIds);
+
 console.log(
   "Product ID types:",
   incomingProductIds.map((id) => ({
@@ -785,13 +788,30 @@ console.log(
     validObjectId: mongoose.Types.ObjectId.isValid(id),
   }))
 );
+
 console.log("========================================");
 
-// Convert the incoming string IDs to MongoDB ObjectIds
+// Make sure every product ID is a valid MongoDB ObjectId
+const invalidProductIds = incomingProductIds.filter(
+  (id) => !mongoose.Types.ObjectId.isValid(id)
+);
+
+if (invalidProductIds.length > 0) {
+  console.log("INVALID PRODUCT IDS:", invalidProductIds);
+
+  return res.status(400).json({
+    success: false,
+    message: "One or more product IDs are invalid.",
+    invalidProductIds,
+  });
+}
+
+// Convert incoming string IDs to MongoDB ObjectIds
 const objectProductIds = incomingProductIds.map(
   (id) => new mongoose.Types.ObjectId(id)
 );
 
+// Find the products
 const products = await Product.find({
   _id: {
     $in: objectProductIds,
@@ -813,20 +833,23 @@ console.log(
   }))
 );
 
-if (products.length !== productIds.length) {
-  const foundIds = products.map((product) =>
-    product._id.toString()
-  );
+// Convert found MongoDB IDs back to strings
+const foundIds = products.map(
+  (product) => product._id.toString()
+);
 
-  const missingIds = productIds.filter(
-    (id) => !foundIds.includes(id)
-  );
+// Determine which requested IDs were not found
+const missingIds = incomingProductIds.filter(
+  (id) => !foundIds.includes(id)
+);
 
-  console.log("========================================");
-  console.log("MISSING PRODUCT IDS:", missingIds);
-  console.log("FOUND PRODUCT IDS:", foundIds);
-  console.log("========================================");
+console.log("========================================");
+console.log("REQUESTED PRODUCT IDS:", incomingProductIds);
+console.log("FOUND PRODUCT IDS:", foundIds);
+console.log("MISSING PRODUCT IDS:", missingIds);
+console.log("========================================");
 
+if (missingIds.length > 0) {
   return res.status(404).json({
     success: false,
     message: "One or more products could not be found.",
@@ -835,6 +858,7 @@ if (products.length !== productIds.length) {
   });
 }
 
+// Build product map for the rest of the order process
 const productMap = new Map();
 
 products.forEach((product) => {
