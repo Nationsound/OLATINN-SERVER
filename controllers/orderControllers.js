@@ -790,13 +790,18 @@ console.log(
 );
 
 console.log("Store ID received:", storeId);
+
 console.log(
   "Store ID valid:",
   mongoose.Types.ObjectId.isValid(storeId)
 );
+
 console.log("========================================");
 
-// Validate product IDs before converting them
+// ====================================================
+// VALIDATE PRODUCT IDS
+// ====================================================
+
 const invalidProductIds = incomingProductIds.filter(
   (id) => !mongoose.Types.ObjectId.isValid(id)
 );
@@ -811,7 +816,10 @@ if (invalidProductIds.length > 0) {
   });
 }
 
-// Convert product IDs to MongoDB ObjectIds
+// ====================================================
+// CONVERT IDS TO OBJECTIDS
+// ====================================================
+
 const objectProductIds = incomingProductIds.map(
   (id) => new mongoose.Types.ObjectId(id)
 );
@@ -821,9 +829,14 @@ const objectStoreId = new mongoose.Types.ObjectId(storeId);
 console.log("Converted product IDs:", objectProductIds);
 console.log("Converted store ID:", objectStoreId);
 
-// ----------------------------------------------------
-// TEST 1: Find products ONLY by _id
-// ----------------------------------------------------
+console.log(
+  "Converted product IDs as strings:",
+  objectProductIds.map((id) => id.toString())
+);
+
+// ====================================================
+// TEST 1: FIND BY _ID ONLY
+// ====================================================
 
 const productsById = await Product.find({
   _id: {
@@ -833,7 +846,8 @@ const productsById = await Product.find({
 
 console.log("========================================");
 console.log("PRODUCT LOOKUP BY ID ONLY");
-console.log("Requested:", incomingProductIds);
+console.log("Requested IDs:", incomingProductIds);
+console.log("Requested count:", incomingProductIds.length);
 console.log("Found count:", productsById.length);
 
 console.log(
@@ -855,43 +869,74 @@ console.log(
 
 console.log("========================================");
 
-// ----------------------------------------------------
-// TEST 2: Find each product individually
-// ----------------------------------------------------
+// ====================================================
+// TEST 2: INDIVIDUAL FIND BY ID
+// ====================================================
 
 for (const productId of incomingProductIds) {
-  const individualProduct = await Product.findById(productId);
-
   console.log("========================================");
   console.log("INDIVIDUAL PRODUCT TEST");
   console.log("Requested ID:", productId);
 
+  const individualProduct = await Product.findById(
+    productId
+  );
+
   if (!individualProduct) {
     console.log("RESULT: PRODUCT NOT FOUND");
+    console.log(
+      "findById returned:",
+      individualProduct
+    );
   } else {
     console.log("RESULT: PRODUCT FOUND");
-    console.log("Mongo ID:", individualProduct._id.toString());
-    console.log("Name:", individualProduct.name);
+
+    console.log(
+      "Mongo ID:",
+      individualProduct._id.toString()
+    );
+
+    console.log(
+      "Name:",
+      individualProduct.name
+    );
+
     console.log(
       "Store:",
       individualProduct.store
         ? individualProduct.store.toString()
         : null
     );
+
     console.log(
       "Owner:",
       individualProduct.owner
         ? individualProduct.owner.toString()
         : null
     );
+
+    console.log(
+      "Price:",
+      individualProduct.price
+    );
+
+    console.log(
+      "Stock:",
+      individualProduct.stockQuantity
+    );
+
+    console.log(
+      "Status:",
+      individualProduct.status
+    );
   }
 
   console.log("========================================");
 }
 
-// ----------------------------------------------------
-// TEST 3: Find products by ID + store
-// ----------------------------------------------------
+// ====================================================
+// TEST 3: FIND BY ID + STORE
+// ====================================================
 
 const productsByIdAndStore = await Product.find({
   _id: {
@@ -902,8 +947,16 @@ const productsByIdAndStore = await Product.find({
 
 console.log("========================================");
 console.log("PRODUCT LOOKUP BY ID + STORE");
-console.log("Requested product count:", objectProductIds.length);
-console.log("Found count:", productsByIdAndStore.length);
+
+console.log(
+  "Requested product count:",
+  objectProductIds.length
+);
+
+console.log(
+  "Found count:",
+  productsByIdAndStore.length
+);
 
 console.log(
   "Found products:",
@@ -918,32 +971,65 @@ console.log(
 
 console.log("========================================");
 
-// ----------------------------------------------------
+// ====================================================
+// CREATE FOUND ID SET
+// ====================================================
+
+const foundIds = productsById.map(
+  (product) => product._id.toString()
+);
+
+const missingIds = incomingProductIds.filter(
+  (id) => !foundIds.includes(id)
+);
+
+// ====================================================
+// SHOW EXACT MATCH RESULT
+// ====================================================
+
+console.log("========================================");
+console.log("FINAL PRODUCT MATCH CHECK");
+console.log("Requested IDs:", incomingProductIds);
+console.log("Found IDs:", foundIds);
+console.log("Missing IDs:", missingIds);
+console.log("========================================");
+
+// ====================================================
 // TEMPORARY FAILURE RESPONSE
-// ----------------------------------------------------
+// ====================================================
 
-if (productsById.length !== incomingProductIds.length) {
-  const foundIds = productsById.map((product) =>
-    product._id.toString()
-  );
-
-  const missingIds = incomingProductIds.filter(
-    (id) => !foundIds.includes(id)
-  );
-
-  console.log("========================================");
-  console.log("MISSING PRODUCT IDS:", missingIds);
-  console.log("FOUND PRODUCT IDS:", foundIds);
-  console.log("========================================");
-
+if (missingIds.length > 0) {
   return res.status(404).json({
     success: false,
     message: "One or more products could not be found.",
+
     requestedProductIds: incomingProductIds,
+
     foundProductIds: foundIds,
+
     missingProductIds: missingIds,
+
+    requestedCount: incomingProductIds.length,
+
+    foundCount: productsById.length,
+
+    storeId: storeId,
+
+    storeProductsFound: productsByIdAndStore.map(
+      (product) => ({
+        id: product._id.toString(),
+        name: product.name,
+        store: product.store
+          ? product.store.toString()
+          : null,
+      })
+    ),
   });
 }
+
+// ====================================================
+// BUILD PRODUCT MAP
+// ====================================================
 
 const productMap = new Map();
 
@@ -953,6 +1039,11 @@ productsById.forEach((product) => {
     product
   );
 });
+
+console.log(
+  "PRODUCT MAP CREATED:",
+  Array.from(productMap.keys())
+);
       const updatedItems = [];
 
       let subtotal = 0;
