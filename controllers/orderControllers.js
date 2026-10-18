@@ -772,55 +772,81 @@ const updateOrder = async (req, res) => {
         }
       }
 
-      const incomingProductIds = requestedItems.map(
+  const incomingProductIds = requestedItems.map(
   (item) => item.productId
 );
 
 console.log("========================================");
 console.log("ORDER PRODUCT LOOKUP");
-console.log("MongoDB database:", mongoose.connection.name);
-console.log("Product collection:", Product.collection.name);
-console.log("Incoming product IDs:", incomingProductIds);
+console.log("Product IDs received:", incomingProductIds);
+
+console.log(
+  "Product ID types:",
+  incomingProductIds.map((id) => ({
+    id,
+    type: typeof id,
+    validObjectId: mongoose.Types.ObjectId.isValid(id),
+  }))
+);
+
+console.log("Store ID received:", storeId);
+console.log(
+  "Store ID valid:",
+  mongoose.Types.ObjectId.isValid(storeId)
+);
 console.log("========================================");
 
+// Validate product IDs before converting them
+const invalidProductIds = incomingProductIds.filter(
+  (id) => !mongoose.Types.ObjectId.isValid(id)
+);
+
+if (invalidProductIds.length > 0) {
+  console.log("INVALID PRODUCT IDS:", invalidProductIds);
+
+  return res.status(400).json({
+    success: false,
+    message: "One or more product IDs are invalid.",
+    invalidProductIds,
+  });
+}
+
+// Convert product IDs to MongoDB ObjectIds
 const objectProductIds = incomingProductIds.map(
   (id) => new mongoose.Types.ObjectId(id)
 );
 
-console.log("ObjectIds being queried:", objectProductIds);
+const objectStoreId = new mongoose.Types.ObjectId(storeId);
 
-// Test each product individually
-for (const productId of incomingProductIds) {
-  const product = await Product.findById(productId);
+console.log("Converted product IDs:", objectProductIds);
+console.log("Converted store ID:", objectStoreId);
 
-  console.log("INDIVIDUAL PRODUCT TEST:", {
-    productId,
-    found: !!product,
-    name: product?.name,
-    store: product?.store?.toString(),
-    owner: product?.owner?.toString(),
-  });
-}
+// ----------------------------------------------------
+// TEST 1: Find products ONLY by _id
+// ----------------------------------------------------
 
-// Test the normal $in query
-const products = await Product.find({
+const productsById = await Product.find({
   _id: {
     $in: objectProductIds,
   },
 });
 
 console.log("========================================");
-console.log("BULK PRODUCT QUERY");
-console.log("Requested:", incomingProductIds.length);
-console.log("Found:", products.length);
+console.log("PRODUCT LOOKUP BY ID ONLY");
+console.log("Requested:", incomingProductIds);
+console.log("Found count:", productsById.length);
 
 console.log(
-  "Products found:",
-  products.map((product) => ({
-    _id: product._id.toString(),
+  "Found products:",
+  productsById.map((product) => ({
+    id: product._id.toString(),
     name: product.name,
-    store: product.store?.toString(),
-    owner: product.owner?.toString(),
+    store: product.store
+      ? product.store.toString()
+      : null,
+    owner: product.owner
+      ? product.owner.toString()
+      : null,
     price: product.price,
     stockQuantity: product.stockQuantity,
     status: product.status,
@@ -829,30 +855,99 @@ console.log(
 
 console.log("========================================");
 
-const foundIds = products.map(
-  (product) => product._id.toString()
+// ----------------------------------------------------
+// TEST 2: Find each product individually
+// ----------------------------------------------------
+
+for (const productId of incomingProductIds) {
+  const individualProduct = await Product.findById(productId);
+
+  console.log("========================================");
+  console.log("INDIVIDUAL PRODUCT TEST");
+  console.log("Requested ID:", productId);
+
+  if (!individualProduct) {
+    console.log("RESULT: PRODUCT NOT FOUND");
+  } else {
+    console.log("RESULT: PRODUCT FOUND");
+    console.log("Mongo ID:", individualProduct._id.toString());
+    console.log("Name:", individualProduct.name);
+    console.log(
+      "Store:",
+      individualProduct.store
+        ? individualProduct.store.toString()
+        : null
+    );
+    console.log(
+      "Owner:",
+      individualProduct.owner
+        ? individualProduct.owner.toString()
+        : null
+    );
+  }
+
+  console.log("========================================");
+}
+
+// ----------------------------------------------------
+// TEST 3: Find products by ID + store
+// ----------------------------------------------------
+
+const productsByIdAndStore = await Product.find({
+  _id: {
+    $in: objectProductIds,
+  },
+  store: objectStoreId,
+});
+
+console.log("========================================");
+console.log("PRODUCT LOOKUP BY ID + STORE");
+console.log("Requested product count:", objectProductIds.length);
+console.log("Found count:", productsByIdAndStore.length);
+
+console.log(
+  "Found products:",
+  productsByIdAndStore.map((product) => ({
+    id: product._id.toString(),
+    name: product.name,
+    store: product.store
+      ? product.store.toString()
+      : null,
+  }))
 );
 
-const missingIds = incomingProductIds.filter(
-  (id) => !foundIds.includes(id)
-);
+console.log("========================================");
 
-console.log("FOUND IDS:", foundIds);
-console.log("MISSING IDS:", missingIds);
+// ----------------------------------------------------
+// TEMPORARY FAILURE RESPONSE
+// ----------------------------------------------------
 
-if (missingIds.length > 0) {
+if (productsById.length !== incomingProductIds.length) {
+  const foundIds = productsById.map((product) =>
+    product._id.toString()
+  );
+
+  const missingIds = incomingProductIds.filter(
+    (id) => !foundIds.includes(id)
+  );
+
+  console.log("========================================");
+  console.log("MISSING PRODUCT IDS:", missingIds);
+  console.log("FOUND PRODUCT IDS:", foundIds);
+  console.log("========================================");
+
   return res.status(404).json({
     success: false,
     message: "One or more products could not be found.",
-    missingProductIds: missingIds,
+    requestedProductIds: incomingProductIds,
     foundProductIds: foundIds,
+    missingProductIds: missingIds,
   });
 }
 
-// Build product map for the rest of the order process
 const productMap = new Map();
 
-products.forEach((product) => {
+productsById.forEach((product) => {
   productMap.set(
     product._id.toString(),
     product
