@@ -778,52 +778,46 @@ const updateOrder = async (req, res) => {
 
 console.log("========================================");
 console.log("ORDER PRODUCT LOOKUP");
-console.log("Product IDs received:", incomingProductIds);
-
-console.log(
-  "Product ID types:",
-  incomingProductIds.map((id) => ({
-    id,
-    type: typeof id,
-    validObjectId: mongoose.Types.ObjectId.isValid(id),
-  }))
-);
-
+console.log("MongoDB database:", mongoose.connection.name);
+console.log("Product collection:", Product.collection.name);
+console.log("Incoming product IDs:", incomingProductIds);
 console.log("========================================");
 
-// Make sure every product ID is a valid MongoDB ObjectId
-const invalidProductIds = incomingProductIds.filter(
-  (id) => !mongoose.Types.ObjectId.isValid(id)
-);
-
-if (invalidProductIds.length > 0) {
-  console.log("INVALID PRODUCT IDS:", invalidProductIds);
-
-  return res.status(400).json({
-    success: false,
-    message: "One or more product IDs are invalid.",
-    invalidProductIds,
-  });
-}
-
-// Convert incoming string IDs to MongoDB ObjectIds
 const objectProductIds = incomingProductIds.map(
   (id) => new mongoose.Types.ObjectId(id)
 );
 
-// Find the products
+console.log("ObjectIds being queried:", objectProductIds);
+
+// Test each product individually
+for (const productId of incomingProductIds) {
+  const product = await Product.findById(productId);
+
+  console.log("INDIVIDUAL PRODUCT TEST:", {
+    productId,
+    found: !!product,
+    name: product?.name,
+    store: product?.store?.toString(),
+    owner: product?.owner?.toString(),
+  });
+}
+
+// Test the normal $in query
 const products = await Product.find({
   _id: {
     $in: objectProductIds,
   },
 });
 
-console.log("PRODUCTS FOUND:", products.length);
+console.log("========================================");
+console.log("BULK PRODUCT QUERY");
+console.log("Requested:", incomingProductIds.length);
+console.log("Found:", products.length);
 
 console.log(
-  "PRODUCTS FOUND DATA:",
+  "Products found:",
   products.map((product) => ({
-    id: product._id.toString(),
+    _id: product._id.toString(),
     name: product.name,
     store: product.store?.toString(),
     owner: product.owner?.toString(),
@@ -833,21 +827,18 @@ console.log(
   }))
 );
 
-// Convert found MongoDB IDs back to strings
+console.log("========================================");
+
 const foundIds = products.map(
   (product) => product._id.toString()
 );
 
-// Determine which requested IDs were not found
 const missingIds = incomingProductIds.filter(
   (id) => !foundIds.includes(id)
 );
 
-console.log("========================================");
-console.log("REQUESTED PRODUCT IDS:", incomingProductIds);
-console.log("FOUND PRODUCT IDS:", foundIds);
-console.log("MISSING PRODUCT IDS:", missingIds);
-console.log("========================================");
+console.log("FOUND IDS:", foundIds);
+console.log("MISSING IDS:", missingIds);
 
 if (missingIds.length > 0) {
   return res.status(404).json({
